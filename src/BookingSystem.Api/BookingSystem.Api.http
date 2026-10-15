@@ -1,3 +1,50 @@
-@BookingSystem.Api_HostAddress = http://localhost:5249
+# Requests for the REST Client (VS Code) / HTTP Client (Rider, Visual Studio).
+# Run `POST rooms` first and paste the returned id into @roomId, then do the same for @bookingId.
+@baseUrl = http://localhost:5249/api/v1
+@roomId = 00000000-0000-0000-0000-000000000000
+@bookingId = 00000000-0000-0000-0000-000000000000
+@userId = 3f2504e0-4f89-41d3-9a0c-0305e82c3301
 
-###
+### Create a room
+POST {{baseUrl}}/rooms
+Content-Type: application/json
+
+{
+  "name": "Meeting Room A",
+  "capacity": 8,
+  "hourlyRate": 25.00,
+  "currency": "USD"
+}
+
+### List active rooms
+GET {{baseUrl}}/rooms?isActive=true
+
+### Available rooms for a slot ('+' must be URL-encoded as %2B)
+GET {{baseUrl}}/rooms/available?start=2030-01-15T10:00:00%2B02:00&end=2030-01-15T12:00:00%2B02:00&minCapacity=4
+
+### Book the room
+POST {{baseUrl}}/bookings
+Content-Type: application/json
+
+{
+  "roomId": "{{roomId}}",
+  "userId": "{{userId}}",
+  "start": "2030-01-15T10:00:00+02:00",
+  "end": "2030-01-15T12:00:00+02:00",
+  "attendees": 4
+}
+
+### Get the booking
+GET {{baseUrl}}/bookings/{{bookingId}}
+
+### Confirm
+POST {{baseUrl}}/bookings/{{bookingId}}/confirm
+
+### Cancel (returns the refund)
+POST {{baseUrl}}/bookings/{{bookingId}}/cancel
+
+### A user's bookings
+GET {{baseUrl}}/users/{{userId}}/bookings?status=Confirmed&page=1&pageSize=20
+
+### Health
+GET http://localhost:5249/health/ready
