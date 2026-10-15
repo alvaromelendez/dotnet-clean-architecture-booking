@@ -1,4 +1,5 @@
 using BookingSystem.Infrastructure.Persistence;
+using BookingSystem.IntegrationTests.Api;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,8 +14,14 @@ namespace BookingSystem.IntegrationTests.Infrastructure;
 public sealed class PostgresFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    private BookingApiFactory? _api;
 
     public string ConnectionString => _container.GetConnectionString();
+
+    /// <summary>
+    /// In-memory API host shared by the HTTP tests, created on first use.
+    /// </summary>
+    public BookingApiFactory Api => _api ??= new BookingApiFactory(ConnectionString);
 
     public async Task InitializeAsync()
     {
@@ -24,7 +31,15 @@ public sealed class PostgresFixture : IAsyncLifetime
         await dbContext.Database.MigrateAsync();
     }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    public async Task DisposeAsync()
+    {
+        if (_api is not null)
+        {
+            await _api.DisposeAsync();
+        }
+
+        await _container.DisposeAsync();
+    }
 
     internal ApplicationDbContext CreateDbContext()
     {
