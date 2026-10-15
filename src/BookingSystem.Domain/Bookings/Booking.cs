@@ -34,6 +34,15 @@ public sealed class Booking : AggregateRoot<BookingId>
         CreatedAtUtc = createdAtUtc;
     }
 
+    /// <summary>
+    /// Reserved for persistence materialization. Bookings are created through <see cref="BookingService.Reserve"/>.
+    /// </summary>
+    private Booking()
+    {
+        TimeSlot = null!;
+        TotalPrice = null!;
+    }
+
     public RoomId RoomId { get; private set; }
 
     public UserId UserId { get; private set; }

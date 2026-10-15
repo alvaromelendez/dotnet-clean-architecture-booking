@@ -7,6 +7,11 @@ namespace BookingSystem.Domain.Abstractions;
 public abstract class AggregateRoot<TId> : Entity<TId>
     where TId : struct, IEquatable<TId>
 {
+    /// <inheritdoc cref="Entity{TId}()"/>
+    protected AggregateRoot()
+    {
+    }
+
     protected AggregateRoot(TId id)
         : base(id)
     {
