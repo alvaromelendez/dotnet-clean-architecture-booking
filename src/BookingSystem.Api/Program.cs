@@ -1,19 +1,38 @@
+using BookingSystem.Api.Infrastructure;
+using BookingSystem.Application;
+using BookingSystem.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+builder.Services
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration)
+    .AddApiProblemDetails()
+    .AddApiJson()
+    .AddApiVersioningAndOpenApi()
+    .AddApiHealthChecks()
+    .AddApiRateLimiting()
+    .AddEndpoints(typeof(Program).Assembly);
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+app.UseRateLimiter();
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApiDocumentation();
 }
 
-app.UseHttpsRedirection();
+await app.ApplyMigrationsIfEnabledAsync();
 
-app.UseAuthorization();
+app.MapApiHealthChecks();
+app.MapVersionedEndpoints();
 
-app.MapControllers();
+await app.RunAsync();
 
-app.Run();
+/// <summary>
+/// Entry point, made public so integration tests can host the API with <c>WebApplicationFactory</c>.
+/// </summary>
+public partial class Program;

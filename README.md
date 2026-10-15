@@ -14,7 +14,8 @@ This is a portfolio project that demonstrates how to build a maintainable, well-
 ## Tech Stack
 
 - [.NET 10](https://dotnet.microsoft.com/) / C# (latest)
-- ASP.NET Core Web API (controllers)
+- ASP.NET Core Minimal APIs with RFC 9457 problem details, native rate limiting and health checks
+- [Asp.Versioning](https://github.com/dotnet/aspnet-api-versioning) (URL segment `/api/v1`) and native OpenAPI (`Microsoft.AspNetCore.OpenApi`) with the [Scalar](https://scalar.com/) UI
 - [MediatR](https://github.com/jbogard/MediatR) 12.x (Apache 2.0): CQRS dispatching and pipeline behaviors
 - [FluentValidation](https://docs.fluentvalidation.net/): input validation
 - [PostgreSQL](https://www.postgresql.org/) with [EF Core 10](https://learn.microsoft.com/ef/core/) and [Npgsql](https://www.npgsql.org/efcore/) (snake_case naming via EFCore.NamingConventions)
@@ -29,6 +30,9 @@ _The stack will be updated as new phases are completed._
 ├── BookingSystem.sln
 ├── Directory.Build.props          # Shared build settings for all projects
 ├── .editorconfig                  # Code style and naming conventions
+├── docker-compose.yml             # Local PostgreSQL (credentials from a git-ignored .env)
+├── .env.example                   # Template for .env
+├── dotnet-tools.json              # Pinned local tools (dotnet-ef)
 ├── src
 │   ├── BookingSystem.Domain           # Entities, value objects, domain rules (no dependencies)
 │   ├── BookingSystem.Application      # Use cases, ports/abstractions (-> Domain)
@@ -160,6 +164,40 @@ Pending ──► Confirmed ──► Completed
 
 Pending bookings were never charged, so they are refunded nothing. A booking cannot be cancelled once its slot has started.
 
+## API
+
+All business endpoints live under `/api/v1`. Every error is an `application/problem+json` response (RFC 9457) with a stable `code` and a `traceId` that matches the server logs.
+
+| Method | Route | Description | Success |
+|---|---|---|---|
+| `POST` | `/api/v1/rooms` | Create a room | `201` + `Location` |
+| `GET` | `/api/v1/rooms?isActive=` | List rooms | `200` |
+| `GET` | `/api/v1/rooms/{id}` | Get a room | `200` |
+| `PUT` | `/api/v1/rooms/{id}` | Update a room | `204` |
+| `POST` | `/api/v1/rooms/{id}/activate` | Activate a room | `204` |
+| `POST` | `/api/v1/rooms/{id}/deactivate` | Deactivate a room | `204` |
+| `GET` | `/api/v1/rooms/available?start=&end=&minCapacity=` | Rooms free for a slot | `200` |
+| `POST` | `/api/v1/bookings` | Book a room | `201` + `Location` |
+| `GET` | `/api/v1/bookings/{id}` | Get a booking | `200` |
+| `POST` | `/api/v1/bookings/{id}/confirm` | Confirm a booking | `204` |
+| `POST` | `/api/v1/bookings/{id}/cancel` | Cancel and get the refund | `200` |
+| `POST` | `/api/v1/bookings/{id}/complete` | Complete a booking | `204` |
+| `GET` | `/api/v1/users/{userId}/bookings?status=&page=&pageSize=` | A user's bookings (paged) | `200` |
+| `GET` | `/health/live` | Liveness (no dependencies) | `200` |
+| `GET` | `/health/ready` | Readiness (includes PostgreSQL) | `200` |
+
+How errors map to HTTP status codes:
+
+| Error type | Status |
+|---|---|
+| `Validation` | `400`. Input-shape failures include an `errors` object keyed by field. |
+| `NotFound` | `404` |
+| `Conflict` | `409`. This includes overlaps, invalid state transitions and concurrent modifications. |
+| `Failure` or an unhandled exception | `500`. A generic message only: no exception text or stack trace, in any environment. |
+| Rate limit exceeded | `429`, with a `Retry-After` header |
+
+Dates are accepted as ISO 8601 with any offset and are converted to UTC. Responses are always in UTC. In query strings, encode `+` as `%2B`.
+
 ## Getting Started
 
 Prerequisites:
@@ -169,9 +207,42 @@ Prerequisites:
 
 ```bash
 dotnet build
-dotnet test
-dotnet run --project src/BookingSystem.Api
+dotnet test   # unit + integration tests (Docker must be running)
 ```
+
+### Running the API locally
+
+1. **Start PostgreSQL** with Docker Compose. The credentials live in a git-ignored `.env` file:
+
+   ```bash
+   cp .env.example .env          # then replace POSTGRES_PASSWORD with your own value
+   docker compose up -d
+   ```
+
+2. **Provide the connection string.** It is never stored in `appsettings*.json`. The API reads `ConnectionStrings:Database`, and you can supply it in either of two ways. Use the values from your `.env`.
+
+   ```bash
+   # Option A: user-secrets (Development only, stored outside the repository)
+   dotnet user-secrets set "ConnectionStrings:Database" \
+     "Host=localhost;Port=5432;Database=booking_system;Username=booking;Password=<your-password>" \
+     --project src/BookingSystem.Api
+
+   # Option B: environment variable (double underscore = section separator)
+   export ConnectionStrings__Database="Host=localhost;Port=5432;Database=booking_system;Username=booking;Password=<your-password>"
+   ```
+
+3. **Run the API.** In Development, pending migrations are applied on startup (`Database:MigrateOnStartup`). Other environments never migrate automatically.
+
+   ```bash
+   dotnet run --project src/BookingSystem.Api --launch-profile http
+   ```
+
+4. **Explore it.** These pages are available in Development only:
+   - Scalar UI: <http://localhost:5249/scalar>
+   - OpenAPI document: <http://localhost:5249/openapi/v1.json>
+   - Ready-made requests: `src/BookingSystem.Api/BookingSystem.Api.http`
+
+Rate limits are configured in the `RateLimiting` section of `appsettings.json`: a fixed window per client IP.
 
 ### Database migrations
 
@@ -190,9 +261,17 @@ dotnet ef database update --project src/BookingSystem.Infrastructure
 
 ## Status
 
-🚧 **In progress — Phase 3: Infrastructure completed**
+🚧 **In progress — Phase 4: API completed**
 
 - [x] Phase 0: Solution setup
 - [x] Phase 1: Domain layer and unit tests
 - [x] Phase 2: Application layer (CQRS use cases, pipeline behaviors) and unit tests
 - [x] Phase 3: Infrastructure layer (PostgreSQL, EF Core, unit of work) and integration tests
+- [x] Phase 4: API layer (Minimal APIs, problem details, versioning, OpenAPI, health checks, rate limiting) and HTTP integration tests
+
+## Known Limitations
+
+- **No authentication or authorization yet.** `POST /bookings` takes the `userId` in the request body, and any caller can act on any booking or list any user's bookings. The user id should come from an authenticated principal, with ownership checks.
+- **Domain events are dispatched at-most-once.** They are published after the database commit without a Transactional Outbox, so a crash between the commit and the publish loses them (for example, a confirmation notification). Notifications are only a logging stub today.
+- **Room name races surface as `500`.** Two simultaneous requests creating rooms with the same name: the unique index rejects the second, but that violation is not translated to `409` yet.
+- **The rate limiter is in-memory and per instance.** Partitioning is by client IP; behind a proxy this needs forwarded headers configured, and several instances do not share counters.
