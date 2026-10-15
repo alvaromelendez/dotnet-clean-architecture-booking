@@ -4,7 +4,7 @@ namespace BookingSystem.UnitTests.Domain.Abstractions;
 
 public sealed class ResultTests
 {
-    private static readonly Error SampleError = new("Sample.Failure", "Something went wrong.");
+    private static readonly Error SampleError = Error.Failure("Sample.Failure", "Something went wrong.");
 
     [Fact]
     public void Success_WhenCreated_IsSuccessWithNoError()
