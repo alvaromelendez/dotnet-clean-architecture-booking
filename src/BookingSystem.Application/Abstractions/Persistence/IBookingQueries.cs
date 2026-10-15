@@ -12,7 +12,7 @@ public interface IBookingQueries
     Task<BookingDto?> GetByIdAsync(Guid bookingId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Bookings of <paramref name="userId"/>, most recent slot first.
+    /// Bookings of <paramref name="userId"/>, most recently created first.
     /// </summary>
     /// <param name="status">When set, returns only bookings in that status.</param>
     /// <param name="page">1-based page number.</param>
