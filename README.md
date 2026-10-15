@@ -17,7 +17,8 @@ This is a portfolio project that demonstrates how to build a maintainable, well-
 - ASP.NET Core Web API (controllers)
 - [MediatR](https://github.com/jbogard/MediatR) 12.x (Apache 2.0): CQRS dispatching and pipeline behaviors
 - [FluentValidation](https://docs.fluentvalidation.net/): input validation
-- Testing: xUnit, NSubstitute, Shouldly
+- [PostgreSQL](https://www.postgresql.org/) with [EF Core 10](https://learn.microsoft.com/ef/core/) and [Npgsql](https://www.npgsql.org/efcore/) (snake_case naming via EFCore.NamingConventions)
+- Testing: xUnit, NSubstitute, Shouldly, [Testcontainers](https://dotnet.testcontainers.org/) (real PostgreSQL in integration tests)
 
 _The stack will be updated as new phases are completed._
 
@@ -71,6 +72,45 @@ Request ──► LoggingBehavior ──► ValidationBehavior ──► Handler
 
 Validators check only the **shape** of the input: non-empty ids and dates, page ranges, and 3-letter currency codes. Business rules are not duplicated there; they live in the domain.
 
+## Infrastructure Layer: Persistence
+
+`BookingSystem.Infrastructure` implements the Application ports with EF Core and PostgreSQL:
+
+- **Mappings** use the Fluent API (`IEntityTypeConfiguration<T>`), so the domain carries no persistence attributes.
+  - Strongly typed ids are stored as `uuid` through value converters.
+  - `Money` and `TimeSlot` are owned types.
+  - Booking status is stored as text.
+- **Write side:** repositories track aggregates. Only the unit of work commits.
+- **Read side:** query classes use `AsNoTracking` and project straight to DTOs in SQL.
+  - Availability is a `NOT EXISTS` subquery.
+  - User bookings are paginated with a stable order (`created_at_utc DESC, id`).
+
+### Preventing double bookings
+
+Availability is checked twice:
+
+1. **In the domain.** `BookingService.Reserve` rejects overlaps with the active bookings it is given.
+2. **In the database.** Two concurrent requests can both pass step 1. A GiST **exclusion constraint** settles the race:
+
+   ```sql
+   EXCLUDE USING gist (room_id WITH =, tstzrange(start_utc, end_utc, '[)') WITH &&)
+   WHERE (status IN ('Pending', 'Confirmed'))
+   ```
+
+   The `[)` bounds mirror the domain's half-open `TimeSlot`, so back-to-back bookings are allowed. The unit of work translates the violation (SQLSTATE `23P01`) into a `ConcurrencyConflictException`. `CreateBooking` turns that into a `Booking.SlotNoLongerAvailable` conflict.
+
+Concurrent edits of the same aggregate are caught by **optimistic concurrency** on PostgreSQL's `xmin` system column, mapped as a shadow row-version property. Room names are unique regardless of case through a unique index on `lower(name)`.
+
+### Domain events
+
+`UnitOfWork.SaveChangesAsync` handles events in three steps:
+
+1. It collects the events of tracked aggregates and clears them.
+2. It commits.
+3. Only after the commit, it publishes each event through MediatR, wrapped in `DomainEventNotification<T>`.
+
+Delivery is **at-most-once**. A crash between the commit and the publish loses the events. The robust alternative is the Transactional Outbox pattern, which is out of scope for this project.
+
 ## Domain Model
 
 The domain layer is pure C#: no project or NuGet references, and no access to the system clock.
@@ -122,7 +162,10 @@ Pending bookings were never charged, so they are refunded nothing. A booking can
 
 ## Getting Started
 
-Prerequisites: [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+Prerequisites:
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [Docker](https://www.docker.com/). The integration tests start a disposable PostgreSQL container through Testcontainers.
 
 ```bash
 dotnet build
@@ -130,10 +173,26 @@ dotnet test
 dotnet run --project src/BookingSystem.Api
 ```
 
+### Database migrations
+
+The EF Core CLI is pinned as a local tool (`dotnet-tools.json`):
+
+```bash
+dotnet tool restore
+
+# Add a migration
+dotnet ef migrations add <Name> --project src/BookingSystem.Infrastructure --output-dir Persistence/Migrations
+
+# Apply migrations (the design-time factory reads this variable)
+export BOOKINGSYSTEM_DB_CONNECTION="Host=localhost;Port=5432;Database=booking_system;Username=<user>;Password=<password>"
+dotnet ef database update --project src/BookingSystem.Infrastructure
+```
+
 ## Status
 
-🚧 **In progress — Phase 2: Application completed**
+🚧 **In progress — Phase 3: Infrastructure completed**
 
 - [x] Phase 0: Solution setup
 - [x] Phase 1: Domain layer and unit tests
 - [x] Phase 2: Application layer (CQRS use cases, pipeline behaviors) and unit tests
+- [x] Phase 3: Infrastructure layer (PostgreSQL, EF Core, unit of work) and integration tests

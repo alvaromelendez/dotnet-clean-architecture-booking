@@ -25,6 +25,15 @@ public sealed class Room : AggregateRoot<RoomId>
         IsActive = true;
     }
 
+    /// <summary>
+    /// Reserved for persistence materialization. Domain code must use <see cref="Create"/>.
+    /// </summary>
+    private Room()
+    {
+        Name = null!;
+        HourlyRate = null!;
+    }
+
     public string Name { get; private set; }
 
     /// <summary>

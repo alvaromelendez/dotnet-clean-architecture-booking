@@ -47,7 +47,17 @@ internal sealed class CreateBookingCommandHandler(
         }
 
         await bookingRepository.AddAsync(booking.Value, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // Another request booked an overlapping slot between our availability check
+            // and the commit; the database constraint is the final arbiter.
+            return BookingErrors.SlotNoLongerAvailable;
+        }
 
         return booking.Value.Id.Value;
     }

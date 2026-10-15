@@ -10,6 +10,14 @@ public abstract class Entity<TId> : IEquatable<Entity<TId>>
 {
     private readonly List<IDomainEvent> _domainEvents = [];
 
+    /// <summary>
+    /// Reserved for object-relational mappers that materialize entities from storage
+    /// and assign <see cref="Id"/> afterwards. Domain code must use <see cref="Entity{TId}(TId)"/>.
+    /// </summary>
+    protected Entity()
+    {
+    }
+
     protected Entity(TId id)
     {
         if (id.Equals(default))
