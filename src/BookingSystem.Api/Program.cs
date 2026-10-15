@@ -10,12 +10,15 @@ builder.Services
     .AddApiProblemDetails()
     .AddApiJson()
     .AddApiVersioningAndOpenApi()
+    .AddApiHealthChecks()
+    .AddApiRateLimiting()
     .AddEndpoints(typeof(Program).Assembly);
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {
@@ -24,6 +27,7 @@ if (app.Environment.IsDevelopment())
 
 await app.ApplyMigrationsIfEnabledAsync();
 
+app.MapApiHealthChecks();
 app.MapVersionedEndpoints();
 
 await app.RunAsync();
