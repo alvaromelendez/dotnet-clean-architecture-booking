@@ -26,7 +26,7 @@ internal sealed class LoggingBehavior<TRequest, TResponse>(ILogger<LoggingBehavi
 
         try
         {
-            var response = await next();
+            var response = await next(cancellationToken);
             var elapsedMilliseconds = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
             if (response.IsFailure)

@@ -26,7 +26,7 @@ internal sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValid
         var validatorList = validators.ToList();
         if (validatorList.Count == 0)
         {
-            return await next();
+            return await next(cancellationToken);
         }
 
         var context = new ValidationContext<TRequest>(request);
@@ -42,7 +42,7 @@ internal sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValid
 
         if (errors.Count == 0)
         {
-            return await next();
+            return await next(cancellationToken);
         }
 
         return CreateFailure(new ValidationError(errors));
