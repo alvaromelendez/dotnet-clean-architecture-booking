@@ -9,6 +9,7 @@ builder.Services
     .AddInfrastructure(builder.Configuration)
     .AddApiProblemDetails()
     .AddApiJson()
+    .AddApiVersioningAndOpenApi()
     .AddEndpoints(typeof(Program).Assembly);
 
 var app = builder.Build();
@@ -16,9 +17,14 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApiDocumentation();
+}
+
 await app.ApplyMigrationsIfEnabledAsync();
 
-app.MapGroup("api/v1").MapEndpoints(app.Services);
+app.MapVersionedEndpoints();
 
 await app.RunAsync();
 
