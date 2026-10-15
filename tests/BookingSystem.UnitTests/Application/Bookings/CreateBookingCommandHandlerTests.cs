@@ -7,6 +7,7 @@ using BookingSystem.Domain.Rooms;
 using BookingSystem.Domain.Shared;
 using BookingSystem.UnitTests.Application.Fakes;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Shouldly;
 using static BookingSystem.UnitTests.Domain.TestData;
 
@@ -118,6 +119,19 @@ public sealed class CreateBookingCommandHandlerTests
 
         result.Error.ShouldBe(BookingErrors.StartNotInFuture);
         await AssertNothingPersisted();
+    }
+
+    [Fact]
+    public async Task Handle_WhenSaveDetectsConcurrentBooking_ReturnsSlotNoLongerAvailableConflict()
+    {
+        _unitOfWork
+            .SaveChangesAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ConcurrencyConflictException("Exclusion constraint violated."));
+
+        var result = await _handler.Handle(Command(), CancellationToken.None);
+
+        result.Error.ShouldBe(BookingErrors.SlotNoLongerAvailable);
+        result.Error.Type.ShouldBe(ErrorType.Conflict);
     }
 
     private CreateBookingCommand Command(Guid? roomId = null) =>

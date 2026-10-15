@@ -30,6 +30,13 @@ public static class BookingErrors
         "Booking.Overlapping",
         "The time slot overlaps with an existing booking for this room.");
 
+    /// <summary>
+    /// The slot was free when checked but another booking claimed it before ours was saved.
+    /// </summary>
+    public static readonly Error SlotNoLongerAvailable = Error.Conflict(
+        "Booking.SlotNoLongerAvailable",
+        "The time slot was booked by someone else while this booking was being created.");
+
     // State transitions (Booking)
 
     public static readonly Error NotPending = Error.Conflict(
