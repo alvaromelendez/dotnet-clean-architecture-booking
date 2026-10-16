@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Test data builders shared by UnitTests and IntegrationTests. A plain class library on purpose:
+    it has no test framework packages, so referencing it never adds test adapters or test discovery.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BookingSystem.Domain\BookingSystem.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

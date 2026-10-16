@@ -33,6 +33,18 @@ public sealed class ResultTests
     }
 
     [Fact]
+    public void Failure_WithNullError_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => Result.Failure(null!));
+    }
+
+    [Fact]
+    public void Constructor_SuccessCarryingAnError_ThrowsArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => new SampleResult(isSuccess: true, SampleError));
+    }
+
+    [Fact]
     public void SuccessOfT_WithValue_ExposesValue()
     {
         var result = Result.Success(42);
@@ -66,4 +78,9 @@ public sealed class ResultTests
         Assert.True(result.IsFailure);
         Assert.Equal(SampleError, result.Error);
     }
+
+    /// <summary>
+    /// Reaches the protected constructor, which outer layers use to derive specialized results.
+    /// </summary>
+    private sealed class SampleResult(bool isSuccess, Error error) : Result(isSuccess, error);
 }

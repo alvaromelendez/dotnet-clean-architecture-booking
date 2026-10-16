@@ -45,6 +45,41 @@ public sealed class EntityTests
     }
 
     [Fact]
+    public void Equals_SameInstance_ReturnsTrue()
+    {
+        var entity = new SampleEntity(SampleId.New());
+
+        Assert.True(entity.Equals(entity));
+    }
+
+    [Fact]
+    public void Equals_WithNull_ReturnsFalse()
+    {
+        var entity = new SampleEntity(SampleId.New());
+
+        Assert.False(entity.Equals((Entity<SampleId>?)null));
+        Assert.False(entity.Equals((object?)null));
+        Assert.False(entity == null);
+        Assert.True(entity != null);
+    }
+
+    [Fact]
+    public void Equals_WithObjectThatIsNotAnEntity_ReturnsFalse()
+    {
+        var entity = new SampleEntity(SampleId.New());
+
+        Assert.False(entity.Equals(entity.Id));
+    }
+
+    [Fact]
+    public void Raise_WithNullEvent_ThrowsArgumentNullException()
+    {
+        var entity = new SampleEntity(SampleId.New());
+
+        Assert.Throws<ArgumentNullException>(() => entity.RaiseEvent(null!));
+    }
+
+    [Fact]
     public void Raise_WithDomainEvent_AddsItToDomainEvents()
     {
         var entity = new SampleEntity(SampleId.New());

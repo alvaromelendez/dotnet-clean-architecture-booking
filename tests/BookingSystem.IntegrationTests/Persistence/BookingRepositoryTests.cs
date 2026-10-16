@@ -78,16 +78,19 @@ public sealed class BookingRepositoryTests(PostgresFixture fixture)
         // Window: 10:00–12:00.
         var window = TestData.Slot(day.AddHours(10), TimeSpan.FromHours(2));
         var pendingOverlap = TestData.NewBooking(room, TestData.Slot(day.AddHours(9), TimeSpan.FromHours(2)));
-        var confirmedOverlap = TestData.NewBooking(room, TestData.Slot(day.AddHours(11), TimeSpan.FromHours(2)));
+        var confirmedOverlap = new BookingBuilder().ForRoom(room).Starting(day.AddHours(11)).Confirmed().Build();
         var adjacentBefore = TestData.NewBooking(room, TestData.Slot(day.AddHours(8), TimeSpan.FromHours(1)));
         var adjacentAfter = TestData.NewBooking(room, TestData.Slot(day.AddHours(13), TimeSpan.FromHours(1)));
         var otherRoomOverlap = TestData.NewBooking(otherRoom, window);
-        confirmedOverlap.Confirm(TestData.UtcNow);
         await SaveNewAsync(pendingOverlap, confirmedOverlap, adjacentBefore, adjacentAfter, otherRoomOverlap);
 
         // A cancelled booking may share the slot of an active one (the exclusion constraint ignores it).
-        var cancelledOverlap = TestData.NewBooking(room, TestData.Slot(day.AddHours(10), TimeSpan.FromMinutes(30)));
-        cancelledOverlap.Cancel(TestData.UtcNow);
+        var cancelledOverlap = new BookingBuilder()
+            .ForRoom(room)
+            .Starting(day.AddHours(10))
+            .Lasting(TimeSpan.FromMinutes(30))
+            .Cancelled()
+            .Build();
         await SaveNewAsync(cancelledOverlap);
 
         await using var dbContext = fixture.CreateDbContext();

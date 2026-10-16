@@ -21,7 +21,7 @@ public sealed class CreateBookingCommandHandlerTests
     private readonly FakeDateTimeProvider _dateTimeProvider = new();
     private readonly CreateBookingCommandHandler _handler;
 
-    private readonly Room _room = ActiveRoom(capacity: 10, hourlyRate: 20m);
+    private readonly Room _room = new RoomBuilder().WithCapacity(10).WithHourlyRate(20m).Build();
     private readonly TimeSlot _slot = SlotStartingIn(TimeSpan.FromDays(2), TimeSpan.FromHours(2));
 
     public CreateBookingCommandHandlerTests()
@@ -86,7 +86,7 @@ public sealed class CreateBookingCommandHandlerTests
     [Fact]
     public async Task Handle_WhenSlotOverlapsExistingBooking_ReturnsOverlappingAndDoesNotPersist()
     {
-        var existing = PendingBooking(_room, _slot);
+        var existing = new BookingBuilder().ForRoom(_room).WithSlot(_slot).Build();
         _bookingRepository
             .GetActiveByRoomAsync(_room.Id, _slot, Arg.Any<CancellationToken>())
             .Returns([existing]);

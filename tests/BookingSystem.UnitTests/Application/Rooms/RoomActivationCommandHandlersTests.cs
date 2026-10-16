@@ -13,7 +13,7 @@ public sealed class RoomActivationCommandHandlersTests
 {
     private readonly IRoomRepository _roomRepository = Substitute.For<IRoomRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
-    private readonly Room _room = ActiveRoom();
+    private readonly Room _room = new RoomBuilder().Build();
 
     public RoomActivationCommandHandlersTests()
     {
@@ -66,6 +66,18 @@ public sealed class RoomActivationCommandHandlersTests
         result.IsSuccess.ShouldBeTrue();
         _room.IsActive.ShouldBeTrue();
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ActivateRoom_WhenRoomDoesNotExist_ReturnsNotFoundAndDoesNotSave()
+    {
+        var roomId = Guid.NewGuid();
+        var handler = new ActivateRoomCommandHandler(_roomRepository, _unitOfWork);
+
+        var result = await handler.Handle(new ActivateRoomCommand(roomId), CancellationToken.None);
+
+        result.Error.ShouldBe(RoomApplicationErrors.NotFound(roomId));
+        await _unitOfWork.DidNotReceiveWithAnyArgs().SaveChangesAsync(default);
     }
 
     [Fact]

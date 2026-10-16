@@ -19,7 +19,9 @@ This is a portfolio project that demonstrates how to build a maintainable, well-
 - [MediatR](https://github.com/jbogard/MediatR) 12.x (Apache 2.0): CQRS dispatching and pipeline behaviors
 - [FluentValidation](https://docs.fluentvalidation.net/): input validation
 - [PostgreSQL](https://www.postgresql.org/) with [EF Core 10](https://learn.microsoft.com/ef/core/) and [Npgsql](https://www.npgsql.org/efcore/) (snake_case naming via EFCore.NamingConventions)
-- Testing: xUnit, NSubstitute, Shouldly, [Testcontainers](https://dotnet.testcontainers.org/) (real PostgreSQL in integration tests)
+- Testing: xUnit, NSubstitute, Shouldly, [Testcontainers](https://dotnet.testcontainers.org/) (real PostgreSQL in integration tests),
+  [ArchUnitNET](https://github.com/TNG/ArchUnitNET) (architecture rules), [FsCheck](https://fscheck.github.io/FsCheck/) (property-based tests),
+  coverlet + [ReportGenerator](https://reportgenerator.io/) (coverage) and [Stryker.NET](https://stryker-mutator.io/) (mutation testing)
 
 _The stack will be updated as new phases are completed._
 
@@ -32,16 +34,21 @@ _The stack will be updated as new phases are completed._
 ├── .editorconfig                  # Code style and naming conventions
 ├── docker-compose.yml             # Local PostgreSQL (credentials from a git-ignored .env)
 ├── .env.example                   # Template for .env
-├── dotnet-tools.json              # Pinned local tools (dotnet-ef)
+├── .config/dotnet-tools.json      # Pinned local tools (dotnet-ef, ReportGenerator, Stryker.NET)
+├── coverlet.runsettings           # Coverage exclusions
+├── stryker-config.*.json          # Mutation testing, one config per mutated project
+├── scripts                        # coverage.sh/.ps1 and mutation.sh/.ps1
+├── docs/testing                   # Test strategy and mutation notes
 ├── src
 │   ├── BookingSystem.Domain           # Entities, value objects, domain rules (no dependencies)
 │   ├── BookingSystem.Application      # Use cases, ports/abstractions (-> Domain)
 │   ├── BookingSystem.Infrastructure   # Persistence and external services (-> Application)
 │   └── BookingSystem.Api              # HTTP entry point, composition root (-> Application, Infrastructure)
 └── tests
-    ├── BookingSystem.UnitTests            # Domain and Application tests
-    ├── BookingSystem.IntegrationTests     # End-to-end tests through the API
-    └── BookingSystem.ArchitectureTests    # Enforces the dependency rule between layers
+    ├── BookingSystem.UnitTests            # Domain and Application tests, incl. property-based tests
+    ├── BookingSystem.IntegrationTests     # PostgreSQL (Testcontainers) and end-to-end HTTP tests
+    ├── BookingSystem.ArchitectureTests    # Dependency rule and conventions (ArchUnitNET)
+    └── BookingSystem.TestUtilities        # Test data builders shared by unit and integration tests
 ```
 
 ### Dependency Rule
@@ -207,8 +214,10 @@ Prerequisites:
 
 ```bash
 dotnet build
-dotnet test   # unit + integration tests (Docker must be running)
+dotnet test   # unit, architecture and integration tests (Docker must be running)
 ```
+
+See [Testing](#testing) for running a single category, coverage and mutation testing.
 
 ### Running the API locally
 
@@ -246,7 +255,7 @@ Rate limits are configured in the `RateLimiting` section of `appsettings.json`: 
 
 ### Database migrations
 
-The EF Core CLI is pinned as a local tool (`dotnet-tools.json`):
+The EF Core CLI is pinned as a local tool (`.config/dotnet-tools.json`):
 
 ```bash
 dotnet tool restore
@@ -259,15 +268,34 @@ export BOOKINGSYSTEM_DB_CONNECTION="Host=localhost;Port=5432;Database=booking_sy
 dotnet ef database update --project src/BookingSystem.Infrastructure
 ```
 
+## Testing
+
+The suite has three categories, one per test project: **Unit** (316 tests, including property-based tests),
+**Integration** (86, real PostgreSQL through Testcontainers) and **Architecture** (39). No test reads the
+system clock or depends on execution order. The full strategy, the reasons behind the thresholds and the
+current results are in [docs/testing/strategy.md](docs/testing/strategy.md).
+
+| Command | Purpose |
+|---|---|
+| `dotnet test` | Run every test (Docker must be running) |
+| `dotnet test --filter "Category=Unit"` | Unit tests only |
+| `dotnet test --filter "Category=Integration"` | Integration tests only (Docker) |
+| `dotnet test --filter "Category=Architecture"` | Architecture rules only |
+| `scripts/coverage.sh` (`scripts/coverage.ps1` on Windows) | All tests with coverage. Writes `coverage-report/` (HTML, Cobertura, Markdown) and fails below 95 % (Domain), 90 % (Application) or 85 % (global) line coverage |
+| `scripts/mutation.sh` (`scripts/mutation.ps1`) | Stryker.NET on Domain and Application with the unit tests. Writes `StrykerOutput/<project>/reports/` and fails below the `break` threshold. Notes: [docs/testing/mutation-notes.md](docs/testing/mutation-notes.md) |
+
+The tools are pinned locally; run `dotnet tool restore` once.
+
 ## Status
 
-🚧 **In progress — Phase 4: API completed**
+🚧 **In progress — Phase 5: Testing completed**
 
 - [x] Phase 0: Solution setup
 - [x] Phase 1: Domain layer and unit tests
 - [x] Phase 2: Application layer (CQRS use cases, pipeline behaviors) and unit tests
 - [x] Phase 3: Infrastructure layer (PostgreSQL, EF Core, unit of work) and integration tests
 - [x] Phase 4: API layer (Minimal APIs, problem details, versioning, OpenAPI, health checks, rate limiting) and HTTP integration tests
+- [x] Phase 5: Testing (architecture rules, test data builders, property-based tests, coverage and mutation thresholds)
 
 ## Known Limitations
 

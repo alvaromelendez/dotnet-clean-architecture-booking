@@ -12,7 +12,8 @@ internal sealed class ListRoomsEndpoint : IEndpoint
             .WithTags(EndpointTags.Rooms)
             .WithSummary("List rooms")
             .WithDescription("Lists rooms ordered by name, optionally filtered by their active state.")
-            .Produces<IReadOnlyList<RoomResponse>>();
+            .Produces<IReadOnlyList<RoomResponse>>()
+            .ProducesProblem(StatusCodes.Status400BadRequest);
 
     private static async Task<IResult> HandleAsync(bool? isActive, ISender sender, CancellationToken cancellationToken)
     {

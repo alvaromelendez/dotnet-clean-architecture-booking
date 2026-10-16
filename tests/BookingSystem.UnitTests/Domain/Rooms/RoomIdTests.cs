@@ -27,4 +27,12 @@ public sealed class RoomIdTests
 
         Assert.Equal(RoomId.From(guid), RoomId.From(guid));
     }
+
+    [Fact]
+    public void ToString_ReturnsTheUnderlyingGuid()
+    {
+        var guid = Guid.NewGuid();
+
+        Assert.Equal(guid.ToString(), RoomId.From(guid).ToString());
+    }
 }

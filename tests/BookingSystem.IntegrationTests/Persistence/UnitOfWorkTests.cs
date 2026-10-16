@@ -46,8 +46,7 @@ public sealed class UnitOfWorkTests(PostgresFixture fixture)
     {
         var room = await SaveRoomAsync();
         var slot = TestData.SlotStartingIn(TimeSpan.FromDays(2));
-        var cancelled = TestData.NewBooking(room, slot);
-        cancelled.Cancel(TestData.UtcNow);
+        var cancelled = new BookingBuilder().ForRoom(room).WithSlot(slot).Cancelled().Build();
         await SaveNewAsync(cancelled);
 
         await SaveNewAsync(TestData.NewBooking(room, slot));
