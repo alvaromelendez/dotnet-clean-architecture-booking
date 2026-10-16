@@ -12,7 +12,7 @@ public sealed class BookingTests
     [Fact]
     public void Confirm_WhenPending_ConfirmsAndRaisesBookingConfirmedEvent()
     {
-        var booking = BookingWithStatus(BookingStatus.Pending);
+        var booking = new BookingBuilder().Build();
         var confirmedAt = UtcNow.AddMinutes(5);
 
         var result = booking.Confirm(confirmedAt);
@@ -31,7 +31,7 @@ public sealed class BookingTests
     [InlineData(BookingStatus.Completed)]
     public void Confirm_WhenNotPending_ReturnsNotPendingErrorWithoutChanges(BookingStatus status)
     {
-        var booking = BookingWithStatus(status);
+        var booking = new BookingBuilder().InStatus(status).Build();
 
         var result = booking.Confirm(UtcNow);
 
@@ -45,7 +45,7 @@ public sealed class BookingTests
     [Fact]
     public void Cancel_WhenPending_CancelsWithZeroRefundAndRaisesBookingCancelledEvent()
     {
-        var booking = BookingWithStatus(BookingStatus.Pending);
+        var booking = new BookingBuilder().Build();
 
         var result = booking.Cancel(UtcNow);
 
@@ -63,8 +63,7 @@ public sealed class BookingTests
     [Fact]
     public void Cancel_WhenConfirmed_CancelsWithPolicyRefundAndRaisesBookingCancelledEvent()
     {
-        var slot = SlotStartingIn(TimeSpan.FromHours(10));
-        var booking = BookingWithStatus(BookingStatus.Confirmed, slot: slot);
+        var booking = new BookingBuilder().StartingIn(TimeSpan.FromHours(10)).Confirmed().Build();
         var expectedRefund = booking.TotalPrice.Multiply(CancellationPolicy.PartialRefundRate);
 
         var result = booking.Cancel(UtcNow);
@@ -80,7 +79,7 @@ public sealed class BookingTests
     [Fact]
     public void Cancel_WhenConfirmedWithFullNotice_RefundsTotalPrice()
     {
-        var booking = BookingWithStatus(BookingStatus.Confirmed, slot: SlotStartingIn(TimeSpan.FromDays(3)));
+        var booking = new BookingBuilder().StartingIn(TimeSpan.FromDays(3)).Confirmed().Build();
 
         booking.Cancel(UtcNow);
 
@@ -92,7 +91,7 @@ public sealed class BookingTests
     [InlineData(BookingStatus.Confirmed)]
     public void Cancel_AfterSlotStarted_ReturnsAlreadyStartedErrorWithoutChanges(BookingStatus status)
     {
-        var booking = BookingWithStatus(status);
+        var booking = new BookingBuilder().InStatus(status).Build();
 
         var result = booking.Cancel(booking.TimeSlot.Start);
 
@@ -108,7 +107,7 @@ public sealed class BookingTests
     [InlineData(BookingStatus.Completed)]
     public void Cancel_WhenTerminal_ReturnsNotCancellableErrorWithoutChanges(BookingStatus status)
     {
-        var booking = BookingWithStatus(status);
+        var booking = new BookingBuilder().InStatus(status).Build();
 
         var result = booking.Cancel(UtcNow);
 
@@ -124,7 +123,7 @@ public sealed class BookingTests
     [InlineData(60)]
     public void Complete_WhenConfirmedAndSlotEnded_CompletesAndRaisesBookingCompletedEvent(int minutesAfterEnd)
     {
-        var booking = BookingWithStatus(BookingStatus.Confirmed);
+        var booking = new BookingBuilder().Confirmed().Build();
         var completedAt = booking.TimeSlot.End.AddMinutes(minutesAfterEnd);
 
         var result = booking.Complete(completedAt);
@@ -139,7 +138,7 @@ public sealed class BookingTests
     [Fact]
     public void Complete_WhenConfirmedButSlotNotEnded_ReturnsNotYetEndedError()
     {
-        var booking = BookingWithStatus(BookingStatus.Confirmed);
+        var booking = new BookingBuilder().Confirmed().Build();
 
         var result = booking.Complete(booking.TimeSlot.End.AddTicks(-1));
 
@@ -154,7 +153,7 @@ public sealed class BookingTests
     [InlineData(BookingStatus.Completed)]
     public void Complete_WhenNotConfirmed_ReturnsNotConfirmedErrorWithoutChanges(BookingStatus status)
     {
-        var booking = BookingWithStatus(status);
+        var booking = new BookingBuilder().InStatus(status).Build();
 
         var result = booking.Complete(booking.TimeSlot.End);
 
@@ -165,10 +164,31 @@ public sealed class BookingTests
 
     // Clock guard
 
+    /// <summary>
+    /// The clock is validated before the state machine: a non-UTC "now" is a programming error
+    /// even when the transition itself would be rejected or would not need the time.
+    /// </summary>
+    [Fact]
+    public void Cancel_WithNonUtcNowOnTerminalBooking_ThrowsArgumentException()
+    {
+        var booking = new BookingBuilder().Completed().Build();
+
+        Assert.Throws<ArgumentException>(() => booking.Cancel(DateTime.SpecifyKind(booking.TimeSlot.End, DateTimeKind.Local)));
+    }
+
+    [Fact]
+    public void Complete_WithNonUtcNowAfterSlotEnded_ThrowsArgumentException()
+    {
+        var booking = new BookingBuilder().Confirmed().Build();
+
+        Assert.Throws<ArgumentException>(() => booking.Complete(DateTime.SpecifyKind(booking.TimeSlot.End, DateTimeKind.Local)));
+        Assert.Equal(BookingStatus.Confirmed, booking.Status);
+    }
+
     [Fact]
     public void StateTransitions_WithNonUtcNow_ThrowArgumentException()
     {
-        var booking = BookingWithStatus(BookingStatus.Pending);
+        var booking = new BookingBuilder().Build();
         var localNow = DateTime.SpecifyKind(UtcNow, DateTimeKind.Local);
 
         Assert.Throws<ArgumentException>(() => booking.Confirm(localNow));

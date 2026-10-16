@@ -45,6 +45,14 @@ public sealed class ErrorMappingTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task ListRooms_WithMalformedFilter_Returns400Problem()
+    {
+        var response = await _client.GetAsync("/api/v1/rooms?isActive=not-a-boolean");
+
+        await response.ShouldBeProblemAsync(HttpStatusCode.BadRequest, "Request.Invalid");
+    }
+
+    [Fact]
     public async Task GetRoom_WhenMissing_Returns404()
     {
         var response = await _client.GetAsync($"/api/v1/rooms/{Guid.NewGuid()}");

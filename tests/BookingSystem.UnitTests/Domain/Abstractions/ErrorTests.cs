@@ -34,6 +34,13 @@ public sealed class ErrorTests
     }
 
     [Fact]
+    public void None_HasNoCodeAndNoDescription()
+    {
+        Assert.Equal(string.Empty, Error.None.Code);
+        Assert.Equal(string.Empty, Error.None.Description);
+    }
+
+    [Fact]
     public void Equals_SameCodeAndDescriptionButDifferentType_ReturnsFalse()
     {
         Assert.NotEqual(Error.Validation("Sample.Code", "Description"), Error.Conflict("Sample.Code", "Description"));

@@ -80,6 +80,26 @@ public sealed class CancellationPolicyTests
         Assert.Equal(BookingErrors.AlreadyStarted, result.Error);
     }
 
+    [Fact]
+    public void CalculateRefund_WithNullArguments_ThrowsArgumentNullException()
+    {
+        var slot = SlotStartingIn(TimeSpan.FromDays(1));
+
+        Assert.Throws<ArgumentNullException>(
+            () => CancellationPolicy.CalculateRefund(BookingStatus.Pending, null!, slot, UtcNow));
+        Assert.Throws<ArgumentNullException>(
+            () => CancellationPolicy.CalculateRefund(BookingStatus.Pending, TotalPrice, null!, UtcNow));
+    }
+
+    [Fact]
+    public void CalculateRefund_WithNonUtcNow_ThrowsArgumentException()
+    {
+        var slot = SlotStartingIn(TimeSpan.FromDays(1));
+
+        Assert.Throws<ArgumentException>(() => CancellationPolicy.CalculateRefund(
+            BookingStatus.Confirmed, TotalPrice, slot, DateTime.SpecifyKind(UtcNow, DateTimeKind.Local)));
+    }
+
     [Theory]
     [InlineData(BookingStatus.Cancelled)]
     [InlineData(BookingStatus.Completed)]

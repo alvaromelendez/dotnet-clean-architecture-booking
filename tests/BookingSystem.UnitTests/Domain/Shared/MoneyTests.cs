@@ -89,6 +89,12 @@ public sealed class MoneyTests
         Assert.Throws<InvalidOperationException>(() => dollars.Add(euros));
     }
 
+    [Fact]
+    public void Add_WithNull_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => Money.Create(10m).Value.Add(null!));
+    }
+
     [Theory]
     [MemberData(nameof(MultiplyCases))]
     public void Multiply_ByNonNegativeFactor_ReturnsProductRoundedToTwoDecimals(
@@ -123,6 +129,15 @@ public sealed class MoneyTests
     public void Equals_SameAmountAndCurrency_ReturnsTrue()
     {
         Assert.Equal(Money.Create(10m, "USD").Value, Money.Create(10.00m, "usd").Value);
+    }
+
+    [Theory]
+    [InlineData(25.5, "25.50 USD")]
+    [InlineData(0, "0.00 USD")]
+    [InlineData(1234.567, "1234.57 USD")]
+    public void ToString_FormatsAmountWithTwoDecimalsAndCurrency(double amount, string expected)
+    {
+        Assert.Equal(expected, Money.Create((decimal)amount).Value.ToString());
     }
 
     [Fact]

@@ -1,0 +1,38 @@
+{
+  "stryker-config": {
+    "project": "BookingSystem.Application.csproj",
+    "test-projects": [
+      "BookingSystem.UnitTests.csproj"
+    ],
+    "mutate": [
+      "**/*.cs",
+      "!**/obj/**/*.cs",
+      "!**/*Errors.cs",
+      "!**/*Dto.cs",
+      "!**/*Command.cs",
+      "!**/*Query.cs",
+      "!**/*Response.cs",
+      "!**/Abstractions/Messaging/*.cs",
+      "!**/Abstractions/Persistence/*.cs",
+      "!**/Abstractions/Clock/*.cs",
+      "!**/Abstractions/Notifications/*.cs",
+      "!**/Behaviors/LoggingBehaviorLog.cs"
+    ],
+    "ignore-methods": [
+      "*Exception.ctor"
+    ],
+    "mutation-level": "Standard",
+    "thresholds": {
+      "high": 90,
+      "low": 80,
+      "break": 60
+    },
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "concurrency": 4
+  }
+}

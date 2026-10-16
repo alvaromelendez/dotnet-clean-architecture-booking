@@ -484,3 +484,8 @@ $RECYCLE.BIN/
 # Ignore build output directories
 **/bin/
 **/Debug/
+
+# Test, coverage and mutation testing output
+TestResults/
+coverage-report/
+StrykerOutput/

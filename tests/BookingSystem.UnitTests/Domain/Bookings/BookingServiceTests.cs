@@ -14,7 +14,7 @@ public sealed class BookingServiceTests
     [Fact]
     public void Reserve_WithValidRequest_ReturnsPendingBookingWithCalculatedPrice()
     {
-        var room = ActiveRoom(capacity: 10, hourlyRate: 20m);
+        var room = new RoomBuilder().WithCapacity(10).WithHourlyRate(20m).Build();
         var userId = UserId.New();
         var slot = SlotStartingIn(TimeSpan.FromDays(1), TimeSpan.FromMinutes(90));
 
@@ -37,7 +37,7 @@ public sealed class BookingServiceTests
     [Fact]
     public void Reserve_WithValidRequest_RaisesBookingCreatedEvent()
     {
-        var room = ActiveRoom();
+        var room = new RoomBuilder().Build();
         var userId = UserId.New();
         var slot = SlotStartingIn(TimeSpan.FromDays(1));
 
@@ -55,10 +55,7 @@ public sealed class BookingServiceTests
     [Fact]
     public void Reserve_WhenRoomIsInactive_ReturnsRoomInactiveError()
     {
-        var room = ActiveRoom();
-        room.Deactivate();
-
-        var result = Reserve(room);
+        var result = Reserve(new RoomBuilder().Inactive().Build());
 
         Assert.Equal(BookingErrors.RoomInactive, result.Error);
     }
@@ -69,15 +66,24 @@ public sealed class BookingServiceTests
     [InlineData(-1)]
     public void Reserve_WithLessThanOneAttendee_ReturnsInvalidAttendeesError(int attendees)
     {
-        var result = Reserve(ActiveRoom(), attendees: attendees);
+        var result = Reserve(new RoomBuilder().Build(), attendees: attendees);
 
         Assert.Equal(BookingErrors.InvalidAttendees, result.Error);
     }
 
     [Fact]
+    public void Reserve_WithMinimumAttendees_ReturnsBooking()
+    {
+        var result = Reserve(new RoomBuilder().Build(), attendees: BookingService.MinAttendees);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(BookingService.MinAttendees, result.Value.Attendees);
+    }
+
+    [Fact]
     public void Reserve_WithAttendeesAboveCapacity_ReturnsCapacityExceededError()
     {
-        var result = Reserve(ActiveRoom(capacity: 6), attendees: 7);
+        var result = Reserve(new RoomBuilder().WithCapacity(6).Build(), attendees: 7);
 
         Assert.Equal(BookingErrors.CapacityExceeded, result.Error);
     }
@@ -85,7 +91,7 @@ public sealed class BookingServiceTests
     [Fact]
     public void Reserve_WithAttendeesEqualToCapacity_ReturnsBooking()
     {
-        var result = Reserve(ActiveRoom(capacity: 6), attendees: 6);
+        var result = Reserve(new RoomBuilder().WithCapacity(6).Build(), attendees: 6);
 
         Assert.True(result.IsSuccess);
     }
@@ -98,7 +104,7 @@ public sealed class BookingServiceTests
     {
         var slot = Slot(UtcNow.AddMinutes(startOffsetMinutes), TimeSpan.FromHours(1));
 
-        var result = Reserve(ActiveRoom(), slot);
+        var result = Reserve(new RoomBuilder().Build(), slot);
 
         Assert.Equal(BookingErrors.StartNotInFuture, result.Error);
     }
@@ -109,7 +115,7 @@ public sealed class BookingServiceTests
     {
         var slot = SlotStartingIn(TimeSpan.FromDays(BookingService.MaxDaysInAdvance) + TimeSpan.FromMinutes(1));
 
-        var result = Reserve(ActiveRoom(), slot);
+        var result = Reserve(new RoomBuilder().Build(), slot);
 
         Assert.Equal(BookingErrors.TooFarInAdvance, result.Error);
     }
@@ -119,7 +125,7 @@ public sealed class BookingServiceTests
     {
         var slot = SlotStartingIn(TimeSpan.FromDays(BookingService.MaxDaysInAdvance));
 
-        var result = Reserve(ActiveRoom(), slot);
+        var result = Reserve(new RoomBuilder().Build(), slot);
 
         Assert.True(result.IsSuccess);
     }
@@ -130,8 +136,8 @@ public sealed class BookingServiceTests
     [InlineData(BookingStatus.Confirmed)]
     public void Reserve_WhenOverlappingActiveBooking_ReturnsOverlappingError(BookingStatus existingStatus)
     {
-        var room = ActiveRoom();
-        var existing = BookingWithStatus(existingStatus, room, SlotStartingIn(TimeSpan.FromDays(3)));
+        var room = new RoomBuilder().Build();
+        var existing = new BookingBuilder().ForRoom(room).StartingIn(TimeSpan.FromDays(3)).InStatus(existingStatus).Build();
         var overlappingSlot = Slot(existing.TimeSlot.Start.AddMinutes(30), TimeSpan.FromHours(2));
 
         var result = Reserve(room, overlappingSlot, existingBookings: [existing]);
@@ -144,8 +150,8 @@ public sealed class BookingServiceTests
     [InlineData(BookingStatus.Completed)]
     public void Reserve_WhenOverlappingInactiveBooking_ReturnsBooking(BookingStatus existingStatus)
     {
-        var room = ActiveRoom();
-        var existing = BookingWithStatus(existingStatus, room, SlotStartingIn(TimeSpan.FromDays(3)));
+        var room = new RoomBuilder().Build();
+        var existing = new BookingBuilder().ForRoom(room).StartingIn(TimeSpan.FromDays(3)).InStatus(existingStatus).Build();
 
         var result = Reserve(room, existing.TimeSlot, existingBookings: [existing]);
 
@@ -155,8 +161,8 @@ public sealed class BookingServiceTests
     [Fact]
     public void Reserve_WhenAdjacentToActiveBooking_ReturnsBooking()
     {
-        var room = ActiveRoom();
-        var existing = ConfirmedBooking(room, SlotStartingIn(TimeSpan.FromDays(3)));
+        var room = new RoomBuilder().Build();
+        var existing = new BookingBuilder().ForRoom(room).StartingIn(TimeSpan.FromDays(3)).Confirmed().Build();
         var adjacentSlot = Slot(existing.TimeSlot.End, TimeSpan.FromHours(1));
 
         var result = Reserve(room, adjacentSlot, existingBookings: [existing]);
@@ -167,10 +173,10 @@ public sealed class BookingServiceTests
     [Fact]
     public void Reserve_WithExistingBookingOfAnotherRoom_ThrowsArgumentException()
     {
-        var otherRoomBooking = PendingBooking(ActiveRoom());
+        var otherRoomBooking = new BookingBuilder().ForRoom(new RoomBuilder().Build()).Build();
 
         Assert.Throws<ArgumentException>(
-            () => Reserve(ActiveRoom(), existingBookings: [otherRoomBooking]));
+            () => Reserve(new RoomBuilder().Build(), existingBookings: [otherRoomBooking]));
     }
 
     [Fact]
@@ -179,7 +185,46 @@ public sealed class BookingServiceTests
         var localNow = DateTime.SpecifyKind(UtcNow, DateTimeKind.Local);
 
         Assert.Throws<ArgumentException>(
-            () => _bookingService.Reserve(ActiveRoom(), UserId.New(), SlotStartingIn(TimeSpan.FromDays(1)), 1, [], localNow));
+            () => _bookingService.Reserve(new RoomBuilder().Build(), UserId.New(), SlotStartingIn(TimeSpan.FromDays(1)), 1, [], localNow));
+    }
+
+    /// <summary>
+    /// The clock is validated before any business rule, so a non-UTC "now" is reported as the
+    /// programming error it is, not hidden behind an expected failure such as an inactive room.
+    /// </summary>
+    [Fact]
+    public void Reserve_WithNonUtcNowAndInactiveRoom_ThrowsInsteadOfReturningRuleError()
+    {
+        var localNow = DateTime.SpecifyKind(UtcNow, DateTimeKind.Local);
+
+        Assert.Throws<ArgumentException>(
+            () => _bookingService.Reserve(new RoomBuilder().Inactive().Build(), UserId.New(), SlotStartingIn(TimeSpan.FromDays(1)), 1, [], localNow));
+    }
+
+    [Fact]
+    public void Reserve_WithDefaultUserId_ThrowsArgumentException()
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => _bookingService.Reserve(new RoomBuilder().Build(), default, SlotStartingIn(TimeSpan.FromDays(1)), 1, [], UtcNow));
+
+        Assert.Equal("userId", exception.ParamName);
+    }
+
+    [Fact]
+    public void Reserve_WithNullArguments_ThrowsArgumentNullException()
+    {
+        var room = new RoomBuilder().Build();
+        var slot = SlotStartingIn(TimeSpan.FromDays(1));
+
+        Assert.Equal(
+            "room",
+            Assert.Throws<ArgumentNullException>(() => _bookingService.Reserve(null!, UserId.New(), slot, 1, [], UtcNow)).ParamName);
+        Assert.Equal(
+            "slot",
+            Assert.Throws<ArgumentNullException>(() => _bookingService.Reserve(room, UserId.New(), null!, 1, [], UtcNow)).ParamName);
+        Assert.Equal(
+            "existingBookingsForRoom",
+            Assert.Throws<ArgumentNullException>(() => _bookingService.Reserve(room, UserId.New(), slot, 1, null!, UtcNow)).ParamName);
     }
 
     private Result<Booking> Reserve(

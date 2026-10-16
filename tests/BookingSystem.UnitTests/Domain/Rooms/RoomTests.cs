@@ -75,7 +75,7 @@ public sealed class RoomTests
     [Fact]
     public void UpdateDetails_WithValidData_UpdatesRoom()
     {
-        var room = ActiveRoom();
+        var room = new RoomBuilder().Build();
 
         var result = room.UpdateDetails("Consulting Office 3", 2, Usd(45m));
 
@@ -88,7 +88,7 @@ public sealed class RoomTests
     [Fact]
     public void UpdateDetails_WithInvalidData_ReturnsErrorAndKeepsPreviousDetails()
     {
-        var room = ActiveRoom(capacity: 10, hourlyRate: 20m);
+        var room = new RoomBuilder().WithCapacity(10).WithHourlyRate(20m).Build();
 
         var result = room.UpdateDetails("New Name", 0, Usd(99m));
 
@@ -99,9 +99,19 @@ public sealed class RoomTests
     }
 
     [Fact]
+    public void UpdateDetails_WithNullHourlyRate_ThrowsArgumentNullExceptionAndKeepsPreviousDetails()
+    {
+        var room = new RoomBuilder().Build();
+
+        Assert.Throws<ArgumentNullException>(() => room.UpdateDetails("New Name", 4, null!));
+        Assert.Equal(RoomBuilder.DefaultName, room.Name);
+        Assert.Equal(Usd(RoomBuilder.DefaultHourlyRate), room.HourlyRate);
+    }
+
+    [Fact]
     public void Deactivate_WhenActive_DeactivatesAndRaisesRoomDeactivatedEvent()
     {
-        var room = ActiveRoom();
+        var room = new RoomBuilder().Build();
 
         var result = room.Deactivate();
 
@@ -114,7 +124,7 @@ public sealed class RoomTests
     [Fact]
     public void Deactivate_WhenAlreadyInactive_ReturnsAlreadyInactiveErrorWithoutRaisingEvent()
     {
-        var room = ActiveRoom();
+        var room = new RoomBuilder().Build();
         room.Deactivate();
         room.ClearDomainEvents();
 
@@ -127,7 +137,7 @@ public sealed class RoomTests
     [Fact]
     public void Activate_WhenInactive_ActivatesRoom()
     {
-        var room = ActiveRoom();
+        var room = new RoomBuilder().Build();
         room.Deactivate();
 
         var result = room.Activate();
@@ -139,7 +149,7 @@ public sealed class RoomTests
     [Fact]
     public void Activate_WhenAlreadyActive_ReturnsAlreadyActiveError()
     {
-        var room = ActiveRoom();
+        var room = new RoomBuilder().Build();
 
         var result = room.Activate();
 
@@ -152,7 +162,7 @@ public sealed class RoomTests
     public void CalculatePrice_ForSlot_ReturnsHourlyRateProportionalToDuration(
         decimal hourlyRate, int durationMinutes, decimal expectedPrice)
     {
-        var room = ActiveRoom(hourlyRate: hourlyRate);
+        var room = new RoomBuilder().WithHourlyRate(hourlyRate).Build();
         var slot = SlotStartingIn(TimeSpan.FromDays(1), TimeSpan.FromMinutes(durationMinutes));
 
         var price = room.CalculatePrice(slot);
@@ -169,6 +179,12 @@ public sealed class RoomTests
         { 10m, 50, 8.33m },
         { 25m, 480, 200m },
     };
+
+    [Fact]
+    public void CalculatePrice_WithNullSlot_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => new RoomBuilder().Build().CalculatePrice(null!));
+    }
 
     [Fact]
     public void CalculatePrice_ForRoomInOtherCurrency_ReturnsPriceInRoomCurrency()

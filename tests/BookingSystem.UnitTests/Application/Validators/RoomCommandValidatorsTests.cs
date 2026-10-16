@@ -52,6 +52,15 @@ public sealed class RoomCommandValidatorsTests
         _updateValidator.TestValidate(ValidUpdate).ShouldNotHaveAnyValidationErrors();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void UpdateRoomDetails_WithBlankName_HasNameError(string name)
+    {
+        _updateValidator.TestValidate(ValidUpdate with { Name = name })
+            .ShouldHaveValidationErrorFor(command => command.Name);
+    }
+
     [Fact]
     public void UpdateRoomDetails_WithEmptyRoomId_HasRoomIdError()
     {

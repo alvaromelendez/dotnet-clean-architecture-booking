@@ -27,4 +27,12 @@ public sealed class UserIdTests
 
         Assert.Equal(UserId.From(guid), UserId.From(guid));
     }
+
+    [Fact]
+    public void ToString_ReturnsTheUnderlyingGuid()
+    {
+        var guid = Guid.NewGuid();
+
+        Assert.Equal(guid.ToString(), UserId.From(guid).ToString());
+    }
 }

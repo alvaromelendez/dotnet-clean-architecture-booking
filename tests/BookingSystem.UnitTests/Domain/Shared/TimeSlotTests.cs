@@ -83,6 +83,14 @@ public sealed class TimeSlotTests
         Assert.Equal(TimeSpan.FromMinutes(90), slot.Duration);
     }
 
+    [Fact]
+    public void OverlapsWith_Null_ThrowsArgumentNullException()
+    {
+        var slot = TimeSlot.Create(Start, Start.AddHours(1)).Value;
+
+        Assert.Throws<ArgumentNullException>(() => slot.OverlapsWith(null!));
+    }
+
     /// <summary>
     /// The reference slot is 10:00–12:00. Offsets are relative to 10:00.
     /// </summary>

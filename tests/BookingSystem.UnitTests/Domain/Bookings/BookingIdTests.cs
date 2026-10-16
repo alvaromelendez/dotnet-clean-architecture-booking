@@ -27,4 +27,12 @@ public sealed class BookingIdTests
 
         Assert.Equal(BookingId.From(guid), BookingId.From(guid));
     }
+
+    [Fact]
+    public void ToString_ReturnsTheUnderlyingGuid()
+    {
+        var guid = Guid.NewGuid();
+
+        Assert.Equal(guid.ToString(), BookingId.From(guid).ToString());
+    }
 }

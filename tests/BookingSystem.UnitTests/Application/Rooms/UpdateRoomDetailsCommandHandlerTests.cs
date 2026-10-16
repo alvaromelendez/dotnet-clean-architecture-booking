@@ -2,6 +2,7 @@ using BookingSystem.Application.Abstractions.Persistence;
 using BookingSystem.Application.Rooms;
 using BookingSystem.Application.Rooms.UpdateRoomDetails;
 using BookingSystem.Domain.Rooms;
+using BookingSystem.Domain.Shared;
 using NSubstitute;
 using Shouldly;
 using static BookingSystem.UnitTests.Domain.TestData;
@@ -13,7 +14,7 @@ public sealed class UpdateRoomDetailsCommandHandlerTests
     private readonly IRoomRepository _roomRepository = Substitute.For<IRoomRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly UpdateRoomDetailsCommandHandler _handler;
-    private readonly Room _room = ActiveRoom();
+    private readonly Room _room = new RoomBuilder().Build();
 
     public UpdateRoomDetailsCommandHandlerTests()
     {
@@ -51,6 +52,30 @@ public sealed class UpdateRoomDetailsCommandHandlerTests
 
         result.IsSuccess.ShouldBeTrue();
         await _roomRepository.DidNotReceiveWithAnyArgs().ExistsByNameAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task Handle_WithInvalidHourlyRate_PropagatesMoneyErrorAndDoesNotSave()
+    {
+        var command = Command("Board Room") with { HourlyRate = -1m };
+
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        result.Error.ShouldBe(MoneyErrors.NegativeAmount);
+        _room.Name.ShouldBe(RoomBuilder.DefaultName);
+        await _roomRepository.DidNotReceiveWithAnyArgs().ExistsByNameAsync(default!, default);
+        await _unitOfWork.DidNotReceiveWithAnyArgs().SaveChangesAsync(default);
+    }
+
+    [Fact]
+    public async Task Handle_WhenDomainRejectsDetails_PropagatesErrorKeepsRoomAndDoesNotSave()
+    {
+        var result = await _handler.Handle(Command("Board Room", capacity: 0), CancellationToken.None);
+
+        result.Error.ShouldBe(RoomErrors.InvalidCapacity);
+        _room.Name.ShouldBe(RoomBuilder.DefaultName);
+        _room.Capacity.ShouldBe(RoomBuilder.DefaultCapacity);
+        await _unitOfWork.DidNotReceiveWithAnyArgs().SaveChangesAsync(default);
     }
 
     [Fact]

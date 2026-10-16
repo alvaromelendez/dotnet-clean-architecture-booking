@@ -39,8 +39,7 @@ public sealed class RoomQueriesTests(PostgresFixture fixture)
     public async Task ListAsync_WithActiveFilter_ReturnsOnlyRoomsInThatState()
     {
         var active = TestData.NewRoom();
-        var inactive = TestData.NewRoom();
-        inactive.Deactivate();
+        var inactive = new RoomBuilder().WithUniqueName().Inactive().Build();
         await SaveAsync([active, inactive]);
 
         await using var dbContext = fixture.CreateDbContext();
@@ -63,17 +62,19 @@ public sealed class RoomQueriesTests(PostgresFixture fixture)
         var slot = TestData.SlotStartingIn(TimeSpan.FromDays(7));
         var free = TestData.NewRoom(capacity: 8);
         var busy = TestData.NewRoom(capacity: 8);
-        var inactive = TestData.NewRoom(capacity: 8);
+        var inactive = new RoomBuilder().WithUniqueName().WithCapacity(8).Inactive().Build();
         var tooSmall = TestData.NewRoom(capacity: 2);
         var freedByCancellation = TestData.NewRoom(capacity: 8);
         var adjacentOnly = TestData.NewRoom(capacity: 8);
-        inactive.Deactivate();
         await SaveAsync([free, busy, inactive, tooSmall, freedByCancellation, adjacentOnly]);
 
-        var busyBooking = TestData.NewBooking(busy, TestData.Slot(slot.Start.AddMinutes(30), TimeSpan.FromHours(1)));
-        busyBooking.Confirm(TestData.UtcNow);
-        var cancelledBooking = TestData.NewBooking(freedByCancellation, slot);
-        cancelledBooking.Cancel(TestData.UtcNow);
+        var busyBooking = new BookingBuilder()
+            .ForRoom(busy)
+            .Starting(slot.Start.AddMinutes(30))
+            .Lasting(TimeSpan.FromHours(1))
+            .Confirmed()
+            .Build();
+        var cancelledBooking = new BookingBuilder().ForRoom(freedByCancellation).WithSlot(slot).Cancelled().Build();
         var adjacentBooking = TestData.NewBooking(adjacentOnly, TestData.Slot(slot.End, TimeSpan.FromHours(1)));
         await SaveAsync(bookings: [busyBooking, cancelledBooking, adjacentBooking]);
 

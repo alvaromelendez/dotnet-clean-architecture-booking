@@ -14,9 +14,12 @@ public sealed class BookingQueriesTests(PostgresFixture fixture)
     public async Task GetByIdAsync_ForCancelledBooking_ProjectsAllFieldsIncludingRefund()
     {
         var room = TestData.NewRoom(hourlyRate: 30m);
-        var booking = TestData.NewBooking(room, TestData.SlotStartingIn(TimeSpan.FromDays(3)));
-        booking.Confirm(TestData.UtcNow.AddMinutes(5));
-        booking.Cancel(TestData.UtcNow.AddMinutes(10));
+        var booking = new BookingBuilder()
+            .ForRoom(room)
+            .StartingIn(TimeSpan.FromDays(3))
+            .Confirmed(TestData.UtcNow.AddMinutes(5))
+            .Cancelled(TestData.UtcNow.AddMinutes(10))
+            .Build();
         await SaveAsync(room, booking);
 
         await using var dbContext = fixture.CreateDbContext();

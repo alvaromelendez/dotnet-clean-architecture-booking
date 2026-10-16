@@ -5,7 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Shouldly" Version="4.3.0" />
@@ -16,11 +19,13 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="BookingSystem.TestUtilities.Builders" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BookingSystem.Api\BookingSystem.Api.csproj" />
     <ProjectReference Include="..\..\src\BookingSystem.Infrastructure\BookingSystem.Infrastructure.csproj" />
+    <ProjectReference Include="..\BookingSystem.TestUtilities\BookingSystem.TestUtilities.csproj" />
   </ItemGroup>
 
 </Project>

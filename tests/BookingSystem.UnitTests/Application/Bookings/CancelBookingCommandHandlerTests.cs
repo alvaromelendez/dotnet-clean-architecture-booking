@@ -84,7 +84,7 @@ public sealed class CancelBookingCommandHandlerTests
 
     private Booking GivenBooking(BookingStatus status)
     {
-        var booking = BookingWithStatus(status);
+        var booking = new BookingBuilder().InStatus(status).Build();
         _bookingRepository.GetByIdAsync(booking.Id, Arg.Any<CancellationToken>()).Returns(booking);
 
         return booking;
