@@ -1,0 +1,57 @@
+# The image only needs src/, docker/ and the root build files. Everything else stays out of the
+# build context: it is smaller and faster, and secrets or local output can never be copied by mistake.
+
+# Version control and CI
+.git
+.gitignore
+.gitattributes
+.github
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+**/*.user
+**/secrets.json
+**/appsettings.*.local.json
+
+# Build output
+**/bin
+**/obj
+**/out
+**/publish
+
+# Tests and their output (not part of the image)
+tests
+TestResults
+**/TestResults
+coverage-report
+StrykerOutput
+**/StrykerOutput
+*.coverage
+*.coveragexml
+
+# Documentation and repository metadata
+docs
+*.md
+LICENSE
+
+# Docker files themselves
+Dockerfile*
+docker-compose*.yml
+compose*.yml
+.dockerignore
+
+# IDE and OS files
+.vs
+.vscode
+.idea
+*.swp
+*.DotSettings.user
+.DS_Store
+Thumbs.db
+
+# Tooling configuration not used by the build
+scripts
+coverlet.runsettings
+stryker-config.*.json

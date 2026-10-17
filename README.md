@@ -1,305 +1,245 @@
 # BookingSystem
 
-A space reservation management system for booking rooms, sports courts, medical offices and other shared spaces.
+A REST API for reserving shared spaces (meeting rooms, sports courts, offices) that never double-books a slot,
+built with .NET 10, Clean Architecture and Domain-Driven Design.
 
-## Purpose
+[![CI](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/<OWNER>/<REPO>/actions/workflows/codeql.yml/badge.svg)](https://github.com/<OWNER>/<REPO>/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 
-This is a portfolio project that demonstrates how to build a maintainable, well-tested .NET application using:
+[Leer el resumen en español](README.es.md)
 
-- **Clean Architecture** — strict, inward-only dependency rule between layers.
-- **Domain-Driven Design (DDD)** — a rich, framework-agnostic domain model.
-- **CQRS** — clear separation between commands (writes) and queries (reads).
-- **Testing** — unit, integration and architecture tests.
+## Why this project exists
 
-## Tech Stack
+This is a portfolio project. It shows how I build a backend that stays correct under concurrency and stays easy
+to change: a framework-free domain model with explicit business rules, a database that is the final arbiter
+against race conditions, tests at every level (including mutation and architecture tests), and the delivery
+work around it: containers, CI/CD, security scanning and documented decisions.
 
-- [.NET 10](https://dotnet.microsoft.com/) / C# (latest)
-- ASP.NET Core Minimal APIs with RFC 9457 problem details, native rate limiting and health checks
-- [Asp.Versioning](https://github.com/dotnet/aspnet-api-versioning) (URL segment `/api/v1`) and native OpenAPI (`Microsoft.AspNetCore.OpenApi`) with the [Scalar](https://scalar.com/) UI
-- [MediatR](https://github.com/jbogard/MediatR) 12.x (Apache 2.0): CQRS dispatching and pipeline behaviors
-- [FluentValidation](https://docs.fluentvalidation.net/): input validation
-- [PostgreSQL](https://www.postgresql.org/) with [EF Core 10](https://learn.microsoft.com/ef/core/) and [Npgsql](https://www.npgsql.org/efcore/) (snake_case naming via EFCore.NamingConventions)
-- Testing: xUnit, NSubstitute, Shouldly, [Testcontainers](https://dotnet.testcontainers.org/) (real PostgreSQL in integration tests),
-  [ArchUnitNET](https://github.com/TNG/ArchUnitNET) (architecture rules), [FsCheck](https://fscheck.github.io/FsCheck/) (property-based tests),
-  coverlet + [ReportGenerator](https://reportgenerator.io/) (coverage) and [Stryker.NET](https://stryker-mutator.io/) (mutation testing)
+## Quick start
 
-_The stack will be updated as new phases are completed._
-
-## Solution Structure
-
-```
-.
-├── BookingSystem.sln
-├── Directory.Build.props          # Shared build settings for all projects
-├── .editorconfig                  # Code style and naming conventions
-├── docker-compose.yml             # Local PostgreSQL (credentials from a git-ignored .env)
-├── .env.example                   # Template for .env
-├── .config/dotnet-tools.json      # Pinned local tools (dotnet-ef, ReportGenerator, Stryker.NET)
-├── coverlet.runsettings           # Coverage exclusions
-├── stryker-config.*.json          # Mutation testing, one config per mutated project
-├── scripts                        # coverage.sh/.ps1 and mutation.sh/.ps1
-├── docs/testing                   # Test strategy and mutation notes
-├── src
-│   ├── BookingSystem.Domain           # Entities, value objects, domain rules (no dependencies)
-│   ├── BookingSystem.Application      # Use cases, ports/abstractions (-> Domain)
-│   ├── BookingSystem.Infrastructure   # Persistence and external services (-> Application)
-│   └── BookingSystem.Api              # HTTP entry point, composition root (-> Application, Infrastructure)
-└── tests
-    ├── BookingSystem.UnitTests            # Domain and Application tests, incl. property-based tests
-    ├── BookingSystem.IntegrationTests     # PostgreSQL (Testcontainers) and end-to-end HTTP tests
-    ├── BookingSystem.ArchitectureTests    # Dependency rule and conventions (ArchUnitNET)
-    └── BookingSystem.TestUtilities        # Test data builders shared by unit and integration tests
-```
-
-### Dependency Rule
-
-```
-Api ──► Infrastructure ──► Application ──► Domain
- └────────────────────────►┘
-```
-
-`BookingSystem.Domain` has no project or NuGet package references, keeping the core of the system fully independent of frameworks and infrastructure.
-
-### Application Layer: CQRS and Pipeline
-
-Use cases are organized as **vertical slices** (`Rooms/CreateRoom`, `Bookings/CancelBooking`, ...). Each slice holds its request, handler, validator and response.
-
-- **Commands** (`ICommand`, `ICommand<T>`) change state. Handlers stay thin: they load the aggregate, call a domain method, and persist through `IUnitOfWork` only when it succeeds.
-- **Queries** (`IQuery<T>`) read through dedicated read-side interfaces (`IRoomQueries`, `IBookingQueries`) that return DTOs directly, without loading aggregates.
-- Every handler returns `Result`/`Result<T>`. Expected failures (not found, validation, conflicts) never throw. Each error carries an `ErrorType` that the API will map to HTTP status codes.
-- The current time comes from `IDateTimeProvider` and is passed into the domain.
-- Domain events reach MediatR through `DomainEventNotification<T>`, so the domain stays free of MediatR.
-
-Each request goes through this pipeline:
-
-```
-Request ──► LoggingBehavior ──► ValidationBehavior ──► Handler ──► Domain
-```
-
-| Behavior | Responsibility |
-|---|---|
-| `LoggingBehavior` | Logs the request name, duration and error code on failure. It never logs the request payload, which may contain sensitive data. |
-| `ValidationBehavior` | Runs the FluentValidation validators. If any fail, it returns a failed `Result` with a `ValidationError` grouped by property, without throwing and without invoking the handler. |
-
-Validators check only the **shape** of the input: non-empty ids and dates, page ranges, and 3-letter currency codes. Business rules are not duplicated there; they live in the domain.
-
-## Infrastructure Layer: Persistence
-
-`BookingSystem.Infrastructure` implements the Application ports with EF Core and PostgreSQL:
-
-- **Mappings** use the Fluent API (`IEntityTypeConfiguration<T>`), so the domain carries no persistence attributes.
-  - Strongly typed ids are stored as `uuid` through value converters.
-  - `Money` and `TimeSlot` are owned types.
-  - Booking status is stored as text.
-- **Write side:** repositories track aggregates. Only the unit of work commits.
-- **Read side:** query classes use `AsNoTracking` and project straight to DTOs in SQL.
-  - Availability is a `NOT EXISTS` subquery.
-  - User bookings are paginated with a stable order (`created_at_utc DESC, id`).
-
-### Preventing double bookings
-
-Availability is checked twice:
-
-1. **In the domain.** `BookingService.Reserve` rejects overlaps with the active bookings it is given.
-2. **In the database.** Two concurrent requests can both pass step 1. A GiST **exclusion constraint** settles the race:
-
-   ```sql
-   EXCLUDE USING gist (room_id WITH =, tstzrange(start_utc, end_utc, '[)') WITH &&)
-   WHERE (status IN ('Pending', 'Confirmed'))
-   ```
-
-   The `[)` bounds mirror the domain's half-open `TimeSlot`, so back-to-back bookings are allowed. The unit of work translates the violation (SQLSTATE `23P01`) into a `ConcurrencyConflictException`. `CreateBooking` turns that into a `Booking.SlotNoLongerAvailable` conflict.
-
-Concurrent edits of the same aggregate are caught by **optimistic concurrency** on PostgreSQL's `xmin` system column, mapped as a shadow row-version property. Room names are unique regardless of case through a unique index on `lower(name)`.
-
-### Domain events
-
-`UnitOfWork.SaveChangesAsync` handles events in three steps:
-
-1. It collects the events of tracked aggregates and clears them.
-2. It commits.
-3. Only after the commit, it publishes each event through MediatR, wrapped in `DomainEventNotification<T>`.
-
-Delivery is **at-most-once**. A crash between the commit and the publish loses the events. The robust alternative is the Transactional Outbox pattern, which is out of scope for this project.
-
-## Domain Model
-
-The domain layer is pure C#: no project or NuGet references, and no access to the system clock.
-Every time-dependent operation receives `DateTime utcNow` as a parameter. Expected business failures
-are returned as `Result`/`Result<T>` with a typed `Error` (codes such as `Booking.RoomInactive`);
-exceptions are reserved for programming errors.
-
-### Building blocks
-
-- `Entity<TId>` / `AggregateRoot<TId>` with identity equality and domain events.
-- Strongly typed ids (`RoomId`, `BookingId`, `UserId`) that reject `Guid.Empty`.
-- Value objects:
-  - `Money`: a non-negative amount with an ISO 4217 currency. Mixing currencies throws, because the domain has no exchange rates.
-  - `TimeSlot`: a half-open UTC interval `[Start, End)` lasting 30 minutes to 8 hours. Adjacent slots do not overlap.
-
-### Room
-
-- Name is required (max 100 characters), capacity must be greater than zero, and the room has an hourly rate.
-- `Activate` / `Deactivate` return an error if the room is already in that state. Deactivating raises `RoomDeactivatedDomainEvent`.
-- The price of a slot is the hourly rate prorated to its exact duration.
-
-### Booking
-
-```
-Pending ──► Confirmed ──► Completed
-   │            │
-   └────────────┴──► Cancelled
-```
-
-- Bookings are created only through `BookingService.Reserve`, which enforces:
-  1. The room is active.
-  2. Attendees are between 1 and the room capacity.
-  3. The slot starts in the future.
-  4. The slot starts no more than 100 days ahead.
-  5. The slot does not overlap a pending or confirmed booking of the same room.
-- New bookings are `Pending` and priced from the room's hourly rate.
-- A booking can be completed only after its slot ends. `Cancelled` and `Completed` are terminal states. Invalid transitions return errors.
-- Each transition raises a domain event (`BookingCreated`, `BookingConfirmed`, `BookingCancelled`, `BookingCompleted`).
-
-### Cancellation policy
-
-| Notice before start | Refund |
-|---|---|
-| 24 hours or more | 100 % |
-| 2 hours to under 24 hours | 50 % |
-| Under 2 hours | 0 % |
-
-Pending bookings were never charged, so they are refunded nothing. A booking cannot be cancelled once its slot has started.
-
-## API
-
-All business endpoints live under `/api/v1`. Every error is an `application/problem+json` response (RFC 9457) with a stable `code` and a `traceId` that matches the server logs.
-
-| Method | Route | Description | Success |
-|---|---|---|---|
-| `POST` | `/api/v1/rooms` | Create a room | `201` + `Location` |
-| `GET` | `/api/v1/rooms?isActive=` | List rooms | `200` |
-| `GET` | `/api/v1/rooms/{id}` | Get a room | `200` |
-| `PUT` | `/api/v1/rooms/{id}` | Update a room | `204` |
-| `POST` | `/api/v1/rooms/{id}/activate` | Activate a room | `204` |
-| `POST` | `/api/v1/rooms/{id}/deactivate` | Deactivate a room | `204` |
-| `GET` | `/api/v1/rooms/available?start=&end=&minCapacity=` | Rooms free for a slot | `200` |
-| `POST` | `/api/v1/bookings` | Book a room | `201` + `Location` |
-| `GET` | `/api/v1/bookings/{id}` | Get a booking | `200` |
-| `POST` | `/api/v1/bookings/{id}/confirm` | Confirm a booking | `204` |
-| `POST` | `/api/v1/bookings/{id}/cancel` | Cancel and get the refund | `200` |
-| `POST` | `/api/v1/bookings/{id}/complete` | Complete a booking | `204` |
-| `GET` | `/api/v1/users/{userId}/bookings?status=&page=&pageSize=` | A user's bookings (paged) | `200` |
-| `GET` | `/health/live` | Liveness (no dependencies) | `200` |
-| `GET` | `/health/ready` | Readiness (includes PostgreSQL) | `200` |
-
-How errors map to HTTP status codes:
-
-| Error type | Status |
-|---|---|
-| `Validation` | `400`. Input-shape failures include an `errors` object keyed by field. |
-| `NotFound` | `404` |
-| `Conflict` | `409`. This includes overlaps, invalid state transitions and concurrent modifications. |
-| `Failure` or an unhandled exception | `500`. A generic message only: no exception text or stack trace, in any environment. |
-| Rate limit exceeded | `429`, with a `Retry-After` header |
-
-Dates are accepted as ISO 8601 with any offset and are converted to UTC. Responses are always in UTC. In query strings, encode `+` as `%2B`.
-
-## Getting Started
-
-Prerequisites:
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Docker](https://www.docker.com/). The integration tests start a disposable PostgreSQL container through Testcontainers.
+Requirements: [Docker](https://docs.docker.com/get-docker/) with Docker Compose v2. No .NET SDK is needed to run it.
 
 ```bash
-dotnet build
-dotnet test   # unit, architecture and integration tests (Docker must be running)
+git clone https://github.com/<OWNER>/<REPO>.git
+cd <REPO>
+cp .env.example .env        # then replace POSTGRES_PASSWORD with your own value
+docker compose up --build   # add -d to run in the background
 ```
 
-See [Testing](#testing) for running a single category, coverage and mutation testing.
-
-### Running the API locally
-
-1. **Start PostgreSQL** with Docker Compose. The credentials live in a git-ignored `.env` file:
-
-   ```bash
-   cp .env.example .env          # then replace POSTGRES_PASSWORD with your own value
-   docker compose up -d
-   ```
-
-2. **Provide the connection string.** It is never stored in `appsettings*.json`. The API reads `ConnectionStrings:Database`, and you can supply it in either of two ways. Use the values from your `.env`.
-
-   ```bash
-   # Option A: user-secrets (Development only, stored outside the repository)
-   dotnet user-secrets set "ConnectionStrings:Database" \
-     "Host=localhost;Port=5432;Database=booking_system;Username=booking;Password=<your-password>" \
-     --project src/BookingSystem.Api
-
-   # Option B: environment variable (double underscore = section separator)
-   export ConnectionStrings__Database="Host=localhost;Port=5432;Database=booking_system;Username=booking;Password=<your-password>"
-   ```
-
-3. **Run the API.** In Development, pending migrations are applied on startup (`Database:MigrateOnStartup`). Other environments never migrate automatically.
-
-   ```bash
-   dotnet run --project src/BookingSystem.Api --launch-profile http
-   ```
-
-4. **Explore it.** These pages are available in Development only:
-   - Scalar UI: <http://localhost:5249/scalar>
-   - OpenAPI document: <http://localhost:5249/openapi/v1.json>
-   - Ready-made requests: `src/BookingSystem.Api/BookingSystem.Api.http`
-
-Rate limits are configured in the `RateLimiting` section of `appsettings.json`: a fixed window per client IP.
-
-### Database migrations
-
-The EF Core CLI is pinned as a local tool (`.config/dotnet-tools.json`):
+Compose starts PostgreSQL, applies the migrations with a one-shot `migrator` container, then starts the API
+once the database is ready. The API listens on <http://localhost:8080> (if port 8080 or 5432 is taken, change
+`API_PORT` or `POSTGRES_PORT` in `.env`):
 
 ```bash
-dotnet tool restore
+curl http://localhost:8080/health/ready
+# Healthy
 
-# Add a migration
-dotnet ef migrations add <Name> --project src/BookingSystem.Infrastructure --output-dir Persistence/Migrations
+# Create a room
+curl -s -X POST http://localhost:8080/api/v1/rooms \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Meeting Room A","capacity":8,"hourlyRate":25.00,"currency":"USD"}'
+# {"id":"<room-id>"}
 
-# Apply migrations (the design-time factory reads this variable)
-export BOOKINGSYSTEM_DB_CONNECTION="Host=localhost;Port=5432;Database=booking_system;Username=<user>;Password=<password>"
-dotnet ef database update --project src/BookingSystem.Infrastructure
+# Book it (start must be in the future, at most 100 days ahead; ISO 8601 with any offset)
+curl -s -X POST http://localhost:8080/api/v1/bookings \
+  -H "Content-Type: application/json" \
+  -d '{"roomId":"<room-id>","userId":"3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+       "start":"<YYYY-MM-DD>T10:00:00Z","end":"<YYYY-MM-DD>T12:00:00Z","attendees":4}'
+# {"id":"<booking-id>"}   (201 Created)
+
+# An overlapping booking for the same room is rejected
+curl -s -X POST http://localhost:8080/api/v1/bookings \
+  -H "Content-Type: application/json" \
+  -d '{"roomId":"<room-id>","userId":"3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+       "start":"<YYYY-MM-DD>T11:00:00Z","end":"<YYYY-MM-DD>T13:00:00Z","attendees":2}'
+# 409 {"title":"Conflict","status":409,"code":"Booking.Overlapping",
+#      "detail":"The time slot overlaps with an existing booking for this room.","traceId":"..."}
 ```
+
+**OpenAPI UI.** The container runs in `Production`, where the OpenAPI document and the
+[Scalar](https://scalar.com/) UI are not exposed. To browse them, set `API_ENVIRONMENT=Development` in `.env`
+and run `docker compose up -d` again. Then open:
+
+- Scalar UI: <http://localhost:8080/scalar>
+- OpenAPI document: <http://localhost:8080/openapi/v1.json>
+
+Stop everything with `docker compose down` (add `-v` to delete the database volume).
+
+### Running from source
+
+With the [.NET 10 SDK](https://dotnet.microsoft.com/download), start only the database and run the API with
+`dotnet run`. In `Development` it applies pending migrations on startup and serves Scalar at
+<http://localhost:5249/scalar>.
+
+```bash
+docker compose up -d postgres
+export ConnectionStrings__Database="Host=localhost;Port=5432;Database=booking_system;Username=booking;Password=<your-password>"
+dotnet run --project src/BookingSystem.Api --launch-profile http
+```
+
+`src/BookingSystem.Api/BookingSystem.Api.http` has ready-made requests. The connection string can also be stored with
+`dotnet user-secrets` (`--project src/BookingSystem.Api`); it is never stored in `appsettings*.json`.
+
+## Architecture
+
+Four projects with an inward-only dependency rule, enforced by architecture tests:
+
+```mermaid
+flowchart LR
+    Api["Api<br/>Minimal APIs, composition root"] --> Infrastructure["Infrastructure<br/>EF Core, PostgreSQL"]
+    Api --> Application["Application<br/>use cases, ports"]
+    Infrastructure --> Application
+    Application --> Domain["Domain<br/>no references"]
+```
+
+- **Domain:** `Room` and `Booking` aggregates, `BookingService` (rules that span both), `CancellationPolicy`,
+  value objects (`TimeSlot`, `Money`, strongly typed ids). No package references, never reads the clock.
+- **Application:** CQRS with MediatR. Commands go through aggregates and `IUnitOfWork`; queries project straight
+  to DTOs. Logging and validation (FluentValidation) run as pipeline behaviors. Every handler returns `Result`.
+- **Infrastructure:** EF Core 10 with Npgsql, an exclusion constraint against overlapping bookings, optimistic
+  concurrency on `xmin`, and domain events published after the commit.
+- **Api:** versioned Minimal APIs (`/api/v1`), RFC 9457 problem details with stable error `code`s, rate limiting
+  and health checks.
+
+More detail, with the booking state machine and the sequence of a booking request (including the race that ends
+in a 409): **[docs/architecture.md](docs/architecture.md)**. Decisions and trade-offs:
+**[docs/adr](docs/adr/README.md)**.
+
+## Endpoints
+
+All routes are under `/api/v1`. Errors are problem details with `code` and `traceId`; any route can also return
+`429` (rate limit) or `500`.
+
+| Method | Route | Description | Success | Errors |
+|---|---|---|---|---|
+| `POST` | `/rooms` | Create a room | 201 | 400, 409 |
+| `GET` | `/rooms` | List rooms, optionally `?isActive=true\|false` | 200 | 400 |
+| `GET` | `/rooms/{id}` | Get a room | 200 | 400, 404 |
+| `PUT` | `/rooms/{id}` | Update a room's name, capacity and rate | 204 | 400, 404, 409 |
+| `POST` | `/rooms/{id}/activate` | Activate a room | 204 | 400, 404, 409 |
+| `POST` | `/rooms/{id}/deactivate` | Deactivate a room | 204 | 400, 404, 409 |
+| `GET` | `/rooms/available` | Rooms free for `?start=&end=&minCapacity=` | 200 | 400 |
+| `POST` | `/bookings` | Book a room (pending) | 201 | 400, 404, 409 |
+| `GET` | `/bookings/{id}` | Get a booking | 200 | 400, 404 |
+| `POST` | `/bookings/{id}/confirm` | Pending → Confirmed | 204 | 400, 404, 409 |
+| `POST` | `/bookings/{id}/cancel` | Cancel; returns the refund | 200 | 400, 404, 409 |
+| `POST` | `/bookings/{id}/complete` | Confirmed → Completed, after the slot ends | 204 | 400, 404, 409 |
+| `GET` | `/users/{userId}/bookings` | A user's bookings, `?status=&page=&pageSize=` (max 100) | 200 | 400 |
+
+Outside the versioned API: `GET /health/live` (process is up) and `GET /health/ready` (PostgreSQL reachable).
 
 ## Testing
 
-The suite has three categories, one per test project: **Unit** (316 tests, including property-based tests),
-**Integration** (86, real PostgreSQL through Testcontainers) and **Architecture** (39). No test reads the
-system clock or depends on execution order. The full strategy, the reasons behind the thresholds and the
-current results are in [docs/testing/strategy.md](docs/testing/strategy.md).
+| Category | Project | Tests | Needs Docker |
+|---|---|---|---|
+| Unit | `BookingSystem.UnitTests` | 316 (incl. FsCheck property-based tests) | No |
+| Integration | `BookingSystem.IntegrationTests` | 86 (PostgreSQL via Testcontainers, HTTP via `WebApplicationFactory`) | Yes |
+| Architecture | `BookingSystem.ArchitectureTests` | 39 (ArchUnitNET) | No |
 
-| Command | Purpose |
-|---|---|
-| `dotnet test` | Run every test (Docker must be running) |
-| `dotnet test --filter "Category=Unit"` | Unit tests only |
-| `dotnet test --filter "Category=Integration"` | Integration tests only (Docker) |
-| `dotnet test --filter "Category=Architecture"` | Architecture rules only |
-| `scripts/coverage.sh` (`scripts/coverage.ps1` on Windows) | All tests with coverage. Writes `coverage-report/` (HTML, Cobertura, Markdown) and fails below 95 % (Domain), 90 % (Application) or 85 % (global) line coverage |
-| `scripts/mutation.sh` (`scripts/mutation.ps1`) | Stryker.NET on Domain and Application with the unit tests. Writes `StrykerOutput/<project>/reports/` and fails below the `break` threshold. Notes: [docs/testing/mutation-notes.md](docs/testing/mutation-notes.md) |
+```bash
+dotnet test                                     # everything (Docker must be running)
+dotnet test --filter "Category!=Integration"    # fast suite, no Docker
+scripts/coverage.sh                             # all tests + coverage report + thresholds
+scripts/mutation.sh                             # Stryker.NET on Domain and Application
+```
 
-The tools are pinned locally; run `dotnet tool restore` once.
+Measured on the 1.0.0 code (2026-10-16):
 
-## Status
+| Metric | Domain | Application | Infrastructure | Api | Global | Threshold |
+|---|---|---|---|---|---|---|
+| Line coverage | 100 % | 99.14 % | 99.65 % | 87.73 % | 96.13 % | Domain 95 %, Application 90 %, global 85 % |
+| Mutation score | 98.42 % | 98.28 % | not mutated | not mutated | | break below 70 % / 60 % |
 
-🚧 **In progress — Phase 5: Testing completed**
+Global branch coverage is 95.3 %. CI fails when a coverage threshold is not met, and the weekly mutation run fails
+below the `break` thresholds. The strategy, the reasons behind the thresholds and the equivalent mutants are in
+[docs/testing/strategy.md](docs/testing/strategy.md) and [docs/testing/mutation-notes.md](docs/testing/mutation-notes.md).
 
-- [x] Phase 0: Solution setup
-- [x] Phase 1: Domain layer and unit tests
-- [x] Phase 2: Application layer (CQRS use cases, pipeline behaviors) and unit tests
-- [x] Phase 3: Infrastructure layer (PostgreSQL, EF Core, unit of work) and integration tests
-- [x] Phase 4: API layer (Minimal APIs, problem details, versioning, OpenAPI, health checks, rate limiting) and HTTP integration tests
-- [x] Phase 5: Testing (architecture rules, test data builders, property-based tests, coverage and mutation thresholds)
+## Continuous integration
 
-## Known Limitations
+| Workflow | Runs on | What it does |
+|---|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | push to `main`, pull requests | Format check, Release build with warnings as errors, vulnerable packages (fails on High/Critical), deprecated packages (report), unit, architecture and integration tests, coverage with thresholds (report as artifact and job summary), gitleaks over the full history |
+| [`codeql.yml`](.github/workflows/codeql.yml) | push, pull requests, weekly | CodeQL `security-and-quality` analysis of C# |
+| [`mutation.yml`](.github/workflows/mutation.yml) | weekly, manual | Stryker.NET; HTML reports as artifacts |
+| [`docker.yml`](.github/workflows/docker.yml) | pull requests, tags `v*.*.*` | Builds the images on pull requests; on tags publishes `ghcr.io/<OWNER>/<REPO>` (amd64, arm64) and `ghcr.io/<OWNER>/<REPO>-migrator` (amd64) |
+| [`release.yml`](.github/workflows/release.yml) | tags `v*.*.*` | GitHub Release with generated notes |
 
-- **No authentication or authorization yet.** `POST /bookings` takes the `userId` in the request body, and any caller can act on any booking or list any user's bookings. The user id should come from an authenticated principal, with ownership checks.
-- **Domain events are dispatched at-most-once.** They are published after the database commit without a Transactional Outbox, so a crash between the commit and the publish loses them (for example, a confirmation notification). Notifications are only a logging stub today.
-- **Room name races surface as `500`.** Two simultaneous requests creating rooms with the same name: the unique index rejects the second, but that violation is not translated to `409` yet.
-- **The rate limiter is in-memory and per instance.** Partitioning is by client IP; behind a proxy this needs forwarded headers configured, and several instances do not share counters.
+Dependabot updates NuGet packages, GitHub Actions and Docker images weekly. SonarQube Cloud can be enabled
+optionally: [docs/optional/sonarcloud.md](docs/optional/sonarcloud.md).
+
+## Project structure
+
+```
+.
+├── src
+│   ├── BookingSystem.Domain           # Aggregates, value objects, domain service, errors (no references)
+│   ├── BookingSystem.Application      # Commands, queries, handlers, validators, behaviors, ports
+│   ├── BookingSystem.Infrastructure   # EF Core/PostgreSQL, repositories, read queries, unit of work, migrations
+│   └── BookingSystem.Api              # Minimal API endpoints, contracts, problem details, composition root
+├── tests
+│   ├── BookingSystem.UnitTests
+│   ├── BookingSystem.IntegrationTests
+│   ├── BookingSystem.ArchitectureTests
+│   └── BookingSystem.TestUtilities    # Test data builders shared by the test projects
+├── docs
+│   ├── architecture.md                # Diagrams: layers, booking lifecycle, create-booking sequence
+│   ├── adr/                           # Architecture decision records
+│   ├── testing/                       # Test strategy and mutation testing notes
+│   └── optional/                      # Optional integrations (SonarQube Cloud)
+├── docker/healthcheck                 # HTTP probe used by the container HEALTHCHECK
+├── scripts                            # coverage, mutation testing, vulnerable-package check
+├── .github                            # Workflows, Dependabot, issue and PR templates
+├── Dockerfile                         # API (default target) and migrator images
+├── docker-compose.yml                 # postgres + migrator + api
+└── Directory.Build.props              # Shared build settings and version
+```
+
+## Key design decisions
+
+- [Clean Architecture](docs/adr/0001-clean-architecture.md): dependencies point to a framework-free domain.
+- [CQRS without Event Sourcing](docs/adr/0002-cqrs-without-event-sourcing.md): aggregates for writes, SQL projections for reads.
+- [Result pattern](docs/adr/0003-result-pattern.md): expected failures are values; exceptions are bugs.
+- [Exclusion constraint](docs/adr/0004-postgresql-exclusion-constraint.md): PostgreSQL settles concurrent bookings; the in-memory check alone cannot.
+- [Minimal APIs](docs/adr/0005-minimal-apis.md): one small class per endpoint, discovered automatically.
+- [Post-commit domain events](docs/adr/0006-post-commit-domain-events.md): at-most-once; the Outbox is the documented next step.
+- [MediatR 12.x](docs/adr/0007-mediatr-12-for-licensing.md): the last Apache-2.0 line.
+- [No authentication in v1](docs/adr/0008-no-authentication-yet.md), with a path to JWT/OIDC.
+- [Time as a parameter](docs/adr/0009-time-as-a-parameter.md): the domain never reads the clock.
+- [Testing strategy](docs/adr/0010-testing-strategy.md): pyramid, mutation testing and architecture tests.
+
+The container image is built on Ubuntu Chiseled (`aspnet:10.0-noble-chiseled`): no shell or package manager, and
+a non-root user. Because the image has no `curl`, its `HEALTHCHECK` runs a 7 KB .NET probe
+([docker/healthcheck/HealthProbe.cs](docker/healthcheck/HealthProbe.cs)) on the runtime that is already there.
+Migrations run as a separate EF Core migration bundle; the API never migrates itself outside `Development`.
+
+## Known limitations
+
+- **No authentication or authorization.** `userId` travels in the request and any caller can act on any booking
+  ([ADR 0008](docs/adr/0008-no-authentication-yet.md)). Do not expose the API publicly as is.
+- **Domain events are at-most-once.** A crash between the commit and the publish loses them
+  ([ADR 0006](docs/adr/0006-post-commit-domain-events.md)). Notifications are only a logging stub.
+- **Deactivating a room does not touch its existing bookings.** `RoomDeactivatedDomainEvent` is raised, but no
+  handler cancels or notifies the affected bookings yet.
+- **`GET /rooms` is not paginated.** It returns every room; only a user's bookings are paginated.
+- **Room name races surface as `500`.** Two simultaneous requests creating rooms with the same name: the unique
+  index rejects the second one, but that violation is not translated into a `409` yet.
+- **The rate limiter is in-memory and per instance,** partitioned by client IP. Behind a proxy it needs forwarded
+  headers, and several instances do not share counters.
+- **The migrator image is published for linux/amd64 only.** `dotnet ef` cannot cross-build a migration bundle for
+  another CPU architecture. Building locally with `docker compose` works on both amd64 and arm64.
+
+## Roadmap
+
+- JWT bearer authentication against an OIDC provider, ownership checks and per-user rate limiting.
+- Transactional Outbox for at-least-once domain events, and real notifications.
+- Cancel and notify bookings when a room is deactivated.
+- Pagination for `GET /rooms`; translate the unique-name violation into `409`.
+- OpenTelemetry traces and metrics.
+- Replace MediatR 12.x with a source-generated mediator; move the tests to xUnit v3 (`xunit` 2.x is deprecated).
+- Deployment to a managed container platform with managed PostgreSQL.
+
+## License
+
+[MIT](LICENSE)

@@ -67,12 +67,12 @@ public static class DomainArbitraries
          select new SameCurrencyAmounts(first, second, third))
         .ToArbitrary();
 
+    // "Now" ranges from 2 days before the start (every refund tier) to 1 hour after it (already started).
     public static Arbitrary<CancellationScenario> CancellationScenarios() =>
         (from status in Gen.Elements(BookingStatus.Pending, BookingStatus.Confirmed)
          from currency in Gen.Elements(Currencies)
          from totalPrice in MoneyGen(currency)
          from slot in TimeSlotGen()
-         // From 2 days before the start (every refund tier) to 1 hour after it (already started).
          from minutesBeforeStart in Gen.Choose(-60, 2 * 24 * 60)
          select new CancellationScenario(status, totalPrice, slot, slot.Start.AddMinutes(-minutesBeforeStart)))
         .ToArbitrary();

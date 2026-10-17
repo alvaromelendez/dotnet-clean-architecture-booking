@@ -8,4 +8,14 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
+  <!-- Product version, stamped into every assembly. Keep it in sync with the git tag (vX.Y.Z) and CHANGELOG.md. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!-- CI builds (GitHub Actions sets CI=true) fail on any warning; local builds only report them. -->
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
 </Project>

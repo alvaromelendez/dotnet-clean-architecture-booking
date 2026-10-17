@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR runs are cancelled; every push to main is kept.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      # setup-dotnet's built-in cache requires packages.lock.json; the project files are the cache key instead.
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'nuget.config', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: |
+          dotnet restore BookingSystem.sln
+          dotnet tool restore
+
+      - name: Check formatting
+        run: dotnet format BookingSystem.sln --verify-no-changes --no-restore
+
+      # CI=true makes Directory.Build.props treat warnings as errors; the flag repeats it explicitly.
+      - name: Build (Release, warnings as errors)
+        run: dotnet build BookingSystem.sln --configuration Release --no-restore -p:TreatWarningsAsErrors=true
+
+      - name: Check vulnerable packages (fails on High/Critical)
+        run: scripts/check-vulnerable-packages.sh
+
+      - name: List deprecated packages (informational)
+        run: dotnet list BookingSystem.sln package --deprecated
+
+      - name: Unit tests
+        run: dotnet test BookingSystem.sln --configuration Release --no-build --filter "Category=Unit"
+
+      - name: Architecture tests
+        run: dotnet test BookingSystem.sln --configuration Release --no-build --filter "Category=Architecture"
+
+      # ubuntu-latest runners ship a Docker engine, which Testcontainers uses to start PostgreSQL.
+      - name: Integration tests
+        run: dotnet test BookingSystem.sln --configuration Release --no-build --filter "Category=Integration"
+
+  coverage:
+    name: Coverage
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'nuget.config', '.config/dotnet-tools.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # The thresholds live in scripts/coverage.sh only; the script fails when one is not met.
+      - name: Run tests with coverage
+        run: |
+          set -o pipefail
+          scripts/coverage.sh | tee coverage-output.txt
+
+      - name: Publish coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Line coverage by layer"
+            echo
+            echo '```'
+            sed -n '/^Line coverage by layer/,/^$/p' coverage-output.txt
+            echo '```'
+            echo
+            if [ -f coverage-report/SummaryGithub.md ]; then cat coverage-report/SummaryGithub.md; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: |
+            coverage-report/
+            coverage-output.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Update both values together: https://github.com/gitleaks/gitleaks/releases (gitleaks_<version>_checksums.txt).
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -fsSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check
+          tar -xzf gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+
+      - name: Scan every commit of every fetched ref
+        run: ./gitleaks git --log-opts="--all" --redact --verbose --report-format sarif --report-path gitleaks.sarif .
+
+      - name: Upload gitleaks report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: gitleaks-report
+          path: gitleaks.sarif
+          retention-days: 7
