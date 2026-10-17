@@ -1,9 +1,9 @@
 using ArchUnitNET.Domain;
 using ArchUnitNET.Fluent;
-using Assembly = System.Reflection.Assembly;
 using Shouldly;
 using static ArchUnitNET.Fluent.ArchRuleDefinition;
 using static BookingSystem.ArchitectureTests.Layers;
+using Assembly = System.Reflection.Assembly;
 
 namespace BookingSystem.ArchitectureTests;
 

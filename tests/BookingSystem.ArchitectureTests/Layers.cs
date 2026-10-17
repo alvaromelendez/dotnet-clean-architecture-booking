@@ -1,8 +1,8 @@
 using ArchUnitNET.Domain;
 using ArchUnitNET.Fluent;
 using ArchUnitNET.Loader;
-using Assembly = System.Reflection.Assembly;
 using static ArchUnitNET.Fluent.ArchRuleDefinition;
+using Assembly = System.Reflection.Assembly;
 
 namespace BookingSystem.ArchitectureTests;
 

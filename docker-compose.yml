@@ -1,8 +1,18 @@
-# Local PostgreSQL for development. Copy .env.example to .env (git-ignored) and set your own password.
+# Full local stack: PostgreSQL, a one-shot migrator and the API.
+#
+#   cp .env.example .env            # then set your own POSTGRES_PASSWORD
+#   docker compose up --build       # everything; API on http://localhost:8080
+#   docker compose up -d postgres   # only the database, for `dotnet run` and the tests
+#
+# Start order: postgres (healthy) -> migrator (exits 0) -> api (healthy on /health/ready).
+# Credentials come from the git-ignored .env file; nothing secret is stored here.
+
+x-database-connection: &database-connection >-
+  Host=postgres;Port=5432;Database=${POSTGRES_DB:-booking_system};Username=${POSTGRES_USER:-booking};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
+
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: bookingsystem-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-booking_system}
       POSTGRES_USER: ${POSTGRES_USER:-booking}
@@ -16,6 +26,48 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+
+  # Applies pending EF Core migrations with the migration bundle, then exits.
+  # The API never migrates on startup outside Development.
+  migrator:
+    build:
+      context: .
+      target: migrator
+    image: bookingsystem-migrator:local
+    environment:
+      BOOKINGSYSTEM_DB_CONNECTION: *database-connection
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: api
+    image: bookingsystem-api:local
+    environment:
+      # Production by default. Set API_ENVIRONMENT=Development in .env to expose the OpenAPI document and Scalar UI.
+      ASPNETCORE_ENVIRONMENT: ${API_ENVIRONMENT:-Production}
+      ConnectionStrings__Database: *database-connection
+      # Migrations are the migrator's job, in every environment of this stack.
+      Database__MigrateOnStartup: "false"
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      # The chiseled image has no shell or curl; the probe is a small .NET program (see docker/healthcheck).
+      test: ["CMD", "dotnet", "/healthcheck/HealthProbe.dll", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
 
 volumes:
   postgres-data:

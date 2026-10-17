@@ -1,6 +1,6 @@
 using System.Reflection;
-using ArchUnitNET.Domain;
 using System.Text.RegularExpressions;
+using ArchUnitNET.Domain;
 using ArchUnitNET.Domain.Dependencies;
 using ArchUnitNET.Fluent.Conditions;
 using ArchUnitNET.xUnit;

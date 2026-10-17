@@ -1,0 +1,67 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # Minor and patch updates of test-only packages land in one pull request.
+      test-packages:
+        patterns:
+          - "coverlet.*"
+          - "FsCheck*"
+          - "Microsoft.AspNetCore.Mvc.Testing"
+          - "Microsoft.NET.Test.Sdk"
+          - "NSubstitute*"
+          - "Shouldly"
+          - "Testcontainers*"
+          - "TngTech.ArchUnitNET*"
+          - "xunit*"
+        update-types: [minor, patch]
+      # EF Core, ASP.NET Core and Microsoft.Extensions ship together; update them together.
+      microsoft-dotnet:
+        patterns:
+          - "Microsoft.AspNetCore.*"
+          - "Microsoft.EntityFrameworkCore*"
+          - "Microsoft.Extensions.*"
+        exclude-patterns:
+          - "Microsoft.AspNetCore.Mvc.Testing"
+        update-types: [minor, patch]
+    ignore:
+      # MediatR 13+ is commercially licensed; the project stays on 12.x on purpose (docs/adr/0007).
+      - dependency-name: "MediatR"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Base images in the Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(deps)"
+
+  # The PostgreSQL image in docker-compose.yml.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(deps)"

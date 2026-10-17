@@ -1,0 +1,62 @@
+# SonarQube Cloud (SonarCloud) analysis. DISABLED: GitHub only runs files ending in .yml or .yaml.
+# To enable it, follow docs/optional/sonarcloud.md and rename this file to sonar.yml.
+name: SonarCloud
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Check https://www.nuget.org/packages/dotnet-sonarscanner for the current version.
+  SONARSCANNER_VERSION: 12.0.0
+
+jobs:
+  sonar:
+    name: Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Pull requests from forks do not receive secrets; skip them instead of failing.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - name: Checkout (full history, for blame and new-code detection)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The scanner needs a Java runtime; ubuntu-latest images include one.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install SonarScanner for .NET
+        run: dotnet tool install --global dotnet-sonarscanner --version "$SONARSCANNER_VERSION"
+
+      # scripts/coverage.sh builds, runs every test and writes coverage-report/Cobertura.xml,
+      # so the thresholds still live in one place.
+      - name: Analyze
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"$SONAR_PROJECT_KEY" \
+            /o:"$SONAR_ORGANIZATION" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.cs.cobertura.reportsPaths="coverage-report/Cobertura.xml" \
+            /d:sonar.exclusions="**/Migrations/**"
+          scripts/coverage.sh
+          dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
